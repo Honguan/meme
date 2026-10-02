@@ -14,3 +14,13 @@
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
 .set-guide{margin-top:12px;font-size:12px;line-height:1.65}.set-guide summary{cursor:pointer;padding:8px 0}.set-guide>p,.set-detail>p{color:#b5b8b2}.set-rule{padding:10px 0;border-top:1px solid #ffffff20;overflow-wrap:anywhere}.set-rule p{margin:4px 0;line-height:1.6}.set-detail{margin:16px 0;font-size:13px}.set-detail>p{line-height:1.6}
 .world-filters{display:flex;flex-wrap:wrap;align-items:end;gap:16px;padding:16px 0;border-bottom:1px solid #ffffff20}.world-filters>span{flex:1 1 260px;color:#b5b8b2;font-size:13px;line-height:1.6}.world-filters label{display:grid;gap:6px;font-size:12px;min-width:140px}.world-filters select{max-width:100%;background:#202825;color:#f2f5ed;border:1px solid #505b54;padding:9px;border-radius:4px}.meaning-detail{margin-top:18px;border-top:1px solid #ffffff20;padding-top:14px;font-size:13px;line-height:1.7;overflow-wrap:anywhere}.meaning-detail p{margin:6px 0;color:#bdc6c0}@media(max-width:600px){.world-filters label{flex:1 1 130px;min-width:0}.world-filters>span{flex-basis:100%}.battle-aside .synergy-section:has(.set-guide[open]){grid-column:1/-1}}
+
+.meme-card{height:274px}.catalog-grid .meme-card{height:292px}
+.card-name{font-size:13px;min-height:40px}.card-ability{font-size:11px;line-height:1.5;-webkit-line-clamp:3;color:#c1cbbb}
+.card-top,.card-bottom,.card-bottom small,.tag-pill{font-size:10px}
+.log-section li{font-size:12px}.log-section li small{font-size:10px}
+.battle-aside h3,.energy-box>span,.field-bar b,.field-bar .text-button{font-size:12px}
+.synergy{font-size:11px;white-space:normal}.synergy small{font-size:10px}
+.deck-row>span>b{font-size:12px}.deck-row small,.flavor,.source-link{font-size:11px}
+.form-grid label,.effect-row label,.match-options label,.target-select,.preset b{font-size:12px}
+.battle-footer,.battle-footer b{font-size:11px}.battle-footer{flex-wrap:wrap}
