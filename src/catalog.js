@@ -1,4 +1,8 @@
 import snapshot from './data/memes.json' with { type: 'json' };
+import world from './data/world-memes.json' with { type: 'json' };
+import { LEGACY_ARCHETYPES } from './data/legacy-archetypes.js';
+import { ARCHETYPES, classifyMeme, semanticCard } from './semantics.js';
+export const WORLD_COVERAGE = { ...world.coverage, count: world.cards.length, collectedAt: world.collectedAt };
 
 export const TYPES = { monster: '角色', spell: '魔法', trap: '陷阱', equip: '裝備', field: '場地', fusion: '融合' };
 export const TAGS = {
@@ -51,21 +55,17 @@ export const CORE = curated.map(([id, name, flavor, type, tag, cost, attack, hp,
   source: 'https://imgflip.com/memetemplates', origin: '精選', ...(type === 'field' ? { field: id } : {}),
 }));
 export function templateCards(memes) {
-  const tags = Object.keys(TAGS);
   return memes.filter(m => m && typeof m.id === 'string' && typeof m.name === 'string' && safeImage(m.url)).map((m) => {
-    const seed = [...m.id].reduce((n, char) => n + char.charCodeAt(0), 0);
-    const tag = tags[seed % tags.length];
-    const effects = {
-      chaos: [fx('damage', 2, 'enemy', 'hit')], wholesome: [fx('heal', 2, 'self', 'round')],
-      brain: [fx('draw', 1)], stonks: [fx('energy', 1)],
-      bonk: [fx('buff', 1, 'self', 'hit')], glitch: [fx('shield', 3)],
-    };
-    return { id: `web-${m.id}`, name: m.name.slice(0, 72), type: 'monster', tag, cost: 1 + seed % 3,
-      attack: 2 + seed % 4, hp: 8 + seed % 8, speed: 4 + seed % 3, effects: effects[tag], image: m.url,
-      flavor: '來自網路的另一種可能。', source: `https://imgflip.com/memetemplate/${encodeURIComponent(m.id)}`, origin: '網路' };
+    const archetype = LEGACY_ARCHETYPES[m.id] || classifyMeme({ name: m.name })?.id;
+    const rule = ARCHETYPES[archetype];
+    return { id: `web-${m.id}`, name: m.name.slice(0, 72), type: 'monster', tag: rule?.tag || 'brain', cost: rule?.cost || 2,
+      attack: rule?.attack || 3, hp: rule?.hp || 12, speed: rule?.speed || 5, effects: structuredClone(rule?.effects || []), image: m.url,
+      archetype, motif: rule?.motif, evidence: { field: 'name', value: m.name },
+      flavor: rule?.explanation || '尚無足夠梗意資料；保留基本角色數值，不自動編造特殊效果。',
+      source: `https://imgflip.com/memetemplate/${encodeURIComponent(m.id)}`, origin: '網路' };
   });
 }
-export const CATALOG = [...CORE, ...templateCards(snapshot.memes)];
+export const CATALOG = [...CORE, ...templateCards(snapshot.memes), ...world.cards.map(semanticCard)];
 export const DEFAULT_DECK = ['doge', 'harold', 'drake', 'cat', 'girl', 'brain', 'sponge', 'kermit', 'leo', 'monkey', 'bonk', 'tape', 'imagination', 'stonks', 'handshake', 'reverse', 'safe', 'suit', 'mind', 'fusion'];
 export const PRESETS = {
   starter: { name: '網路原住民', deck: DEFAULT_DECK },

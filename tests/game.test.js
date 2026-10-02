@@ -4,6 +4,8 @@ import { CATALOG, CORE, TAGS, validateCustom, templateCards, DEFAULT_DECK } from
 import { createGame, playCard, summon, collide, cleanup, finishRound, planAI, checkWinner, combos, draw, units } from '../src/game.js';
 import { createBattle } from '../src/physics.js';
 import { parseProfile, freshProfile } from '../src/storage.js';
+import world from '../src/data/world-memes.json' with { type: 'json' };
+import { ARCHETYPES, classifyMeme } from '../src/semantics.js';
 
 function setup() { const g=createGame({seed:123}); g.units=[]; g.players.forEach(p=>{p.hand=[];p.energy=9;p.deck=[];p.discard=[];}); return g; }
 const card=id=>CORE.find(c=>c.id===id);
@@ -12,6 +14,40 @@ test('catalog includes 100 actual web templates and all six card types',()=>{
   assert.equal(CATALOG.filter(c=>c.origin==='網路').length,100);
   assert.equal(new Set(CATALOG.map(c=>c.type)).size,6);
   assert.equal(new Set(CATALOG.map(c=>c.id)).size,CATALOG.length);
+});
+
+test('global catalog has over 3000 unique sourced templates with bounded semantic effects and language provenance',()=>{
+  const cards=CATALOG.filter(c=>c.origin==='全球');
+  assert.ok(cards.length>=3000);assert.equal(cards.length,world.cards.length);
+  assert.equal(new Set(cards.map(c=>c.id)).size,cards.length);
+  assert.equal(new Set(cards.map(c=>c.image)).size,cards.length);
+  assert.equal(new Set(cards.map(c=>c.sourceName.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,''))).size,cards.length);
+  assert.ok(new Set(cards.flatMap(c=>c.languages)).size>=15);
+  assert.ok(new Set(cards.flatMap(c=>c.countries)).size>=30);
+  for(const c of cards){
+    assert.ok(ARCHETYPES[c.archetype]);assert.ok(c.evidence.value);
+    assert.equal(new URL(c.source).hostname,'api.templates.meme');
+    assert.equal(new URL(c.image).protocol,'https:');
+    assert.ok(c.effects.length>0&&c.effects.length<=4);
+    assert.equal(validateCustom(c).tag,c.tag);
+  }
+  const p=freshProfile();p.deck=[...DEFAULT_DECK,cards[0].id];
+  assert.deepEqual(parseProfile(p).deck,p.deck);
+});
+
+test('semantic classification prioritizes primary meaning over misleading search aliases and never hashes IDs',()=>{
+  const samples=[
+    [{name:"Mario's Belt Threat",aliases:['one for the money']},'bonk'],
+    [{name:'Chinese Rapping Dog',aliases:['Brainrot Chinese'],emotions:[{name:'Absurdity'}]},'dance'],
+    [{name:'Martial Arts Prairie Dog',emotions:[{name:'focused'}]},'bonk'],
+    [{name:'I Don’t Give a F*ck',emotions:[{name:'Surprise'}]},'calm'],
+    [{name:'Gwenchana Crying Guy'},'sad'],
+  ];
+  for(const [input,id] of samples)assert.equal(classifyMeme(input).id,id);
+  assert.equal(classifyMeme({name:'Unlabelled Template'}),null);
+  const a=templateCards([{id:'unknown-a',name:'Dancing Celebration',url:'https://example.com/a.png'}])[0];
+  const b=templateCards([{id:'unknown-b',name:'Dancing Celebration',url:'https://example.com/b.png'}])[0];
+  assert.equal(a.archetype,'dance');assert.deepEqual(a.effects,b.effects);assert.equal(a.attack,b.attack);
 });
 test('play validation never spends a card or energy on rejected actions',()=>{
   const g=setup();g.players[0].hand=['doge'];g.players[0].energy=0;

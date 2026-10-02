@@ -25,7 +25,7 @@ export class Arena {
     this.battle = createBattle(this.game, (x, y, a, b, report) => {
       const at = performance.now();
       this.impacts = this.impacts.filter(p => p.kind !== 'hit' && at - p.at < 850);
-      this.impacts.push({ kind: 'hit', x, y, tag: a.tag, secondTag: b.tag, at });
+      this.impacts.push({ kind: 'hit', x, y, tag: a.tag, secondTag: b.tag, motif: a.motif || a.tag, secondMotif: b.motif || b.tag, at });
       for (const change of report.changes) {
         const previous = this.impacts.find(p => p.kind === 'result' && p.uid === change.uid);
         this.impacts = this.impacts.filter(p => p !== previous);
@@ -66,6 +66,11 @@ export class Arena {
     const palette = { grid: ['#171d1c','#556a55'], fine: ['#271f1b','#966446'], moon: ['#182027','#526b85'], backrooms: ['#292a21','#92905a'], xp: ['#182923','#478e71'] };
     const [bg, line] = palette[field] || palette.grid;
     c.clearRect(0, 0, WIDTH, HEIGHT); c.fillStyle = bg; c.fillRect(0, 0, WIDTH, HEIGHT);
+    const art = imageFor('/art/memeverse-arena.png');
+    if (art) {
+      c.drawImage(art, 0, 0, WIDTH, HEIGHT);
+      c.fillStyle = bg; c.globalAlpha = field === 'grid' ? .16 : .55; c.fillRect(0, 0, WIDTH, HEIGHT); c.globalAlpha = 1;
+    }
     c.save();
     if (now < (this.shakeUntil || 0)) c.translate(Math.sin(now * .09) * 3, Math.cos(now * .11) * 2);
     c.strokeStyle = line; c.globalAlpha = .19; c.lineWidth = 1;
@@ -151,8 +156,8 @@ export class Arena {
             c.beginPath(); c.moveTo(p.x + Math.cos(angle) * radius, p.y + Math.sin(angle) * radius);
             c.lineTo(p.x + Math.cos(angle) * (radius + 22), p.y + Math.sin(angle) * (radius + 22)); c.stroke();
           }
-          this.drawMotif(p.tag, p.x, Math.max(100, p.y - 95), age);
-          if (p.secondTag !== p.tag) this.drawMotif(p.secondTag, p.x, Math.min(HEIGHT - 70, p.y + 95), age);
+          this.drawMotif(p.motif, p.x, Math.max(100, p.y - 95), age, p.tag);
+          if (p.secondMotif !== p.motif) this.drawMotif(p.secondMotif, p.x, Math.min(HEIGHT - 70, p.y + 95), age, p.secondTag);
         }
       } else {
         const lane = this.impacts.filter(v => v.kind === 'result' && v.side === p.side).indexOf(p);
@@ -176,20 +181,27 @@ export class Arena {
       c.restore();
     }
   }
-  drawMotif(tag, x, y, age) {
+  drawMotif(motif, x, y, age, tag = motif) {
     const c = this.ctx;
     c.save(); c.translate(x, y); c.rotate((age - .3) * .4);
     c.fillStyle = TAGS[tag].color; c.strokeStyle = TAGS[tag].color; c.lineWidth = 4;
-    if (tag === 'wholesome') {
+    if (motif === 'wholesome' || motif === 'heart') {
       c.beginPath(); c.moveTo(0, 15); c.bezierCurveTo(-42, -10, -12, -39, 0, -17); c.bezierCurveTo(12, -39, 42, -10, 0, 15); c.fill();
-    } else if (tag === 'stonks') {
+    } else if (motif === 'stonks' || motif === 'coin') {
       c.beginPath(); c.arc(0, 0, 22, 0, Math.PI * 2); c.stroke(); this.caption('$', 0, 10, TAGS[tag].color, 29);
-    } else if (tag === 'glitch') {
+    } else if (motif === 'glitch') {
       for (let i = 0; i < 4; i++) c.fillRect((i % 2 ? -1 : 1) * age * 20 - 28, i * 9 - 20, 56, 4);
       this.caption('404', 0, 5, TAGS[tag].color, 25);
-    } else if (tag === 'chaos') {
+    } else if (motif === 'chaos' || motif === 'fire') {
       c.beginPath(); c.moveTo(-22, 20); c.quadraticCurveTo(-32, -5, -7, -35); c.lineTo(0, -8); c.lineTo(18, -24); c.quadraticCurveTo(43, 22, -22, 20); c.fill();
-    } else this.caption(tag === 'bonk' ? 'BONK!' : 'BIG BRAIN', 0, 0, TAGS[tag].color, tag === 'bonk' ? 28 : 22);
+    } else if (motif === 'tears') {
+      c.fillStyle = '#8fc9f9'; c.beginPath(); c.moveTo(0, -30); c.bezierCurveTo(-32, 8, -12, 31, 0, 24); c.bezierCurveTo(24, 28, 28, 7, 0, -30); c.fill();
+    } else if (motif === 'shield') {
+      c.beginPath(); c.moveTo(-22,-22); c.lineTo(22,-22); c.lineTo(19,9); c.lineTo(0,27); c.lineTo(-19,9); c.closePath(); c.stroke();
+    } else if (motif === 'dance') {
+      c.beginPath(); c.moveTo(-6,16); c.lineTo(-6,-22); c.lineTo(20,-28); c.lineTo(20,8); c.stroke();
+      for(const [px,py] of [[-13,17],[13,9]]){c.beginPath();c.ellipse(px,py,9,6,-.3,0,Math.PI*2);c.fill();}
+    } else this.caption(({bonk:'BONK!',brain:'BIG BRAIN',shock:'?!',roast:'ROAST!'})[motif] || 'CLASH!', 0, 0, TAGS[tag].color, motif === 'bonk' ? 28 : 22);
     c.restore();
   }
   drawUnit(u, x, y) {
@@ -205,7 +217,8 @@ export class Arena {
     c.restore(); c.strokeStyle = color; c.lineWidth = 4; c.beginPath(); c.arc(x, y, 49, 0, Math.PI * 2); c.stroke();
     if (u.shield) { c.strokeStyle = '#87d9ff'; c.lineWidth = 2; c.beginPath(); c.arc(x, y, 55, 0, Math.PI * 2); c.stroke(); }
     c.fillStyle = '#101313'; c.fillRect(x - 49, y + 57, 98, 6); c.fillStyle = color; c.fillRect(x - 49, y + 57, 98 * u.hp / u.maxHp, 6);
-    c.font = '600 14px Arial'; c.textAlign = 'center'; c.fillStyle = '#f2f5ed'; c.fillText(u.name.length > 14 ? `${u.name.slice(0, 13)}…` : u.name, x, y + 84);
+    c.fillStyle = '#101313e6'; c.fillRect(x - 77, y + 68, 154, 39);
+    c.font = '600 14px Arial'; c.textAlign = 'center'; c.fillStyle = '#f2f5ed'; c.fillText(u.name.length > 14 ? `${u.name.slice(0, 13)}…` : u.name, x, y + 84, 146);
     c.font = '12px Arial'; c.fillStyle = '#b0b8af'; c.fillText(`ATK ${u.attack}  /  HP ${u.hp}${u.shield ? `  +${u.shield}` : ''}`, x, y + 101);
     c.fillStyle = color; c.beginPath(); c.arc(x + 36, y - 36, 13, 0, 7); c.fill(); c.fillStyle = '#111'; c.font = 'bold 12px Arial'; c.fillText(String(u.attack), x + 36, y - 32);
   }

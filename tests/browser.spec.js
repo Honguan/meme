@@ -23,6 +23,26 @@ test('reduced-motion duel still reports impact results and advances the round',a
   await expect(page.locator('canvas')).toHaveAttribute('aria-label',/迷因對決：/,{timeout:12000});
   await expect(page.locator('#round-number')).toHaveText('02',{timeout:15000});
 });
+
+test('global library filters source language and semantic ability and preserves world cards in a saved deck',async({page})=>{
+  await page.goto('/');await page.getByRole('button',{name:'卡牌圖鑑'}).click();
+  await page.getByRole('combobox',{name:'卡牌來源'}).selectOption('全球');
+  await expect(page.locator('.results-heading')).toContainText('4807');
+  await page.getByRole('combobox',{name:'來源語言',exact:true}).selectOption('zho');
+  await expect(page.locator('.catalog-grid .meme-card')).toHaveCount(3);
+  await page.getByRole('combobox',{name:'梗意能力'}).selectOption('dance');
+  await expect(page.locator('.catalog-grid .meme-card')).toHaveCount(1);
+  await page.locator('.catalog-grid .meme-card').click();
+  await expect(page.locator('.meaning-detail')).toContainText('節奏上頭');
+  await expect(page.locator('.meaning-detail')).toContainText('Chinese Rapping Dog');
+  await expect(page.locator('.source-link')).toHaveAttribute('href',/api.templates.meme/);
+  await page.getByRole('button',{name:'加入卡組'}).click();
+  await page.reload();await page.getByRole('button',{name:'卡牌圖鑑'}).click();
+  await expect(page.locator('.deck-list')).toContainText('Chinese Rapping Dog');
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+  await page.screenshot({path:'.artifacts/world-library-mobile.png',fullPage:true});
+});
 test('collection, custom multi-effect card, saved deck and reload',async({page})=>{
   await page.goto('/');await page.getByRole('button',{name:'卡牌圖鑑'}).click();
   await page.getByRole('searchbox',{name:'搜尋卡牌'}).fill('Doge');

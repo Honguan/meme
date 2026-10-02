@@ -22,7 +22,7 @@
 
 ## 卡牌與連攜
 
-初始提供 **23 張精選卡、100 個網路迷因模板、5 個場地**。所有卡牌免費解鎖，沒有付費抽卡。
+初始提供 **23 張精選卡、100 個 Imgflip 模板、4,807 個全球迷因模板、5 個場地**。所有卡牌免費解鎖，沒有付費抽卡。不同來源可能收錄同一迷因的不同版本；4,807 是全球來源內去重後的模板數，不宣稱為全網全集。
 
 | 類型 | 規則 |
 | --- | --- |
@@ -62,7 +62,11 @@
 
 ## 迷因來源
 
-網路卡庫採用 [Imgflip 公開模板 API](https://api.imgflip.com/get_memes) 的 100 個熱門模板快照，並保留來源與擷取時間於 `src/data/memes.json`。圖鑑的「更新網路卡庫」會取得當下 API 提供的模板；這不是全網爬蟲，也無法涵蓋全網所有既存或未來迷因。其他迷因可透過自訂卡牌與 JSON 卡組加入。
+全球卡庫採用 [templates.meme 公開 API](https://api.templates.meme/api/templates) 的已發布、來源標示 SFW 且具有圖片／影片封面之模板。`src/data/world-memes.json` 保留逐卡來源、語言、地區、能力分類及設計依據。2026-10-02 收集 4,894 筆候選，移除 41 筆重複與 46 筆缺乏可分類依據的記錄，保留 4,807 筆；涵蓋 15 種來源語言與 32 個來源地區，未標註的資料不推測語言或國籍。
+
+能力由 `src/semantics.js` 的 20 種語意規則設計，依正式名稱與來源情緒／主題標籤匹配，不以 ID 雜湊指定數值。這是可追溯的自動化遊戲詮釋，並非每張均經人工考證；來源標籤也可能出錯。搜尋別名可能只是 SEO 字詞，不用於能力分類。圖鑑可依來源語言、地區與梗意能力篩選，卡牌詳情顯示設計依據。沒有足夠梗意資料的新 Imgflip 模板只保留基本角色，不編造特殊效果。
+
+另保留 [Imgflip 公開模板 API](https://api.imgflip.com/get_memes) 的 100 個熱門模板及原有卡牌 ID，避免舊卡組失效。圖鑑的「更新網路卡庫」只更新 Imgflip；全球資料使用下列腳本更新。這不是全網全集，也不能涵蓋所有語言與未來迷因；其他迷因可透過自訂卡牌與 JSON 卡組加入。
 
 圖片由原始 HTTPS 來源載入，未把第三方圖片重新授予 MIT 授權；圖片、角色、商標仍屬其權利人。外部來源失效或被封鎖時，卡牌保留文字及替代圖樣，遊戲規則仍可運行。網站無後端帳號、廣告或付費功能；圖片及字型服務會收到一般瀏覽器資源請求。
 
@@ -70,7 +74,11 @@
 
 ```sh
 npm run catalog:refresh
+npm run catalog:collect
+npm run catalog:build
 ```
+
+收集腳本預設從 `.artifacts/world-crawl` 快取續傳；要重新取得最新索引與資料，使用 `npm run catalog:collect -- --refresh`，完成後執行 `npm run catalog:build`。原始收集快取不提交 Git；只提交經篩選的快照。
 
 ## 本機開發
 
@@ -94,6 +102,7 @@ Windows 瀏覽器測試使用已安裝的 Microsoft Edge；Linux 使用 Playwrig
 ## 專案結構
 
 - `src/catalog.js`：卡牌、場地、效果資料與匯入驗證。
+- `src/semantics.js`、`src/data/world-memes.json`：語意能力與全球卡庫快照。
 - `src/game.js`：回合、能量、連鎖效果、AI 與勝負規則。
 - `src/physics.js`：固定時間步長的 Matter.js 碰撞模擬。
 - `src/arena.js`：Canvas 場地、角色與碰撞特效。

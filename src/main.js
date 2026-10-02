@@ -1,5 +1,6 @@
 import { createIcons, Swords, Layers, Hammer, Search, SlidersHorizontal, ArrowUpRight, ArrowRight, ArrowLeft, Plus, Minus, X, Zap, Shield, Heart, Sparkles, Volume2, VolumeX, RotateCcw, Github, Download, Upload, RefreshCw, Trash2, Check, ChevronRight, Target, Flame, Trophy } from 'lucide';
-import { CATALOG, TYPES, TAGS, FIELDS, ACTIONS, TARGETS, TRIGGERS, PRESETS, templateCards, validateCustom, effectText } from './catalog.js';
+import { CATALOG, TYPES, TAGS, FIELDS, ACTIONS, TARGETS, TRIGGERS, PRESETS, WORLD_COVERAGE, templateCards, validateCustom, effectText } from './catalog.js';
+import { ARCHETYPES } from './semantics.js';
 import { createGame, playCard, playError, units, combos, planAI, finishRound, isUnit } from './game.js';
 import { Arena } from './arena.js';
 import { loadProfile, saveProfile, parseProfile } from './storage.js';
@@ -16,6 +17,9 @@ let catalog = collect();
 let game = createGame({ catalog, deck: validDeck() });
 let screen = 'battle', arena, query = '', filter = 'all', origin = 'all', visible = 24, mute = true, audio, counted = false;
 let handoff = false, toastTimer, formBase = null;
+let sourceLanguage = 'all', sourceCountry = 'all', ability = 'all';
+const languageNames = { ara:'العربية', ben:'বাংলা', deu:'Deutsch', eng:'English', fra:'Français', hin:'हिन्दी', jpn:'日本語', kor:'한국어', por:'Português', rus:'Русский', spa:'Español', tam:'தமிழ்', urd:'اردو', vie:'Tiếng Việt', zho:'中文' };
+const regionNames = new Intl.DisplayNames(['zh-Hant'], { type: 'region' });
 const app = $('#app'), modal = $('#modal');
 
 function collect() { return [...new Map([...CATALOG, ...templateCards(profile.web), ...profile.custom].map(c => [c.id, c])).values()]; }
@@ -85,9 +89,10 @@ function battleHTML() {
     <footer class="battle-footer"><span>MEME CLASH <b>自由開打。認真亂鬥。</b></span><span>${catalog.length} CARDS <i>/</i> ${FIELDS.length} ARENAS <i>/</i> ${profile.stats.wins} WINS</span></footer></main>`;
 }
 function collectionHTML() {
-  const filtered = catalog.filter(c => (filter === 'all' || c.type === filter) && (origin === 'all' || c.origin === origin) && `${c.name} ${TAGS[c.tag].name} ${effectText(c)}`.toLowerCase().includes(query.toLowerCase()));
+  const filtered = catalog.filter(c => (filter === 'all' || c.type === filter) && (origin === 'all' || c.origin === origin) && (sourceLanguage === 'all' || (sourceLanguage === 'unknown' ? !c.languages?.length : c.languages?.includes(sourceLanguage))) && (sourceCountry === 'all' || c.countries?.includes(sourceCountry)) && (ability === 'all' || c.archetype === ability) && `${c.name} ${TAGS[c.tag].name} ${TAGS[c.tag].set} ${c.flavor} ${ARCHETYPES[c.archetype]?.name || ''} ${effectText(c)}`.toLowerCase().includes(query.toLowerCase()));
   return `<main class="collection-page"><div class="page-heading"><div><span class="eyebrow accent">THE COLLECTION</span><h1>整個網路，都是你的牌庫<span class="period">.</span></h1></div><button class="quiet-button" data-action="refresh">${icon('refresh-cw')} 更新網路卡庫</button></div>
-    <div class="collection-toolbar"><label class="search-box">${icon('search')}<input id="search" type="search" placeholder="搜尋迷因、陣營或效果" aria-label="搜尋卡牌" value="${esc(query)}"></label><div class="filter-tabs" role="group" aria-label="卡牌類型">${[['all','全部'],...Object.entries(TYPES)].map(([id,label])=>`<button data-filter="${id}" class="${filter===id?'active':''}" aria-pressed="${filter===id}">${label}</button>`).join('')}</div><select id="origin-filter" aria-label="卡牌來源">${['all','精選','網路','自訂'].map(o=>`<option value="${o}" ${origin===o?'selected':''}>${o==='all'?'所有來源':o}</option>`).join('')}</select></div>
+    <div class="collection-toolbar"><label class="search-box">${icon('search')}<input id="search" type="search" placeholder="搜尋迷因、陣營或效果" aria-label="搜尋卡牌" value="${esc(query)}"></label><div class="filter-tabs" role="group" aria-label="卡牌類型">${[['all','全部'],...Object.entries(TYPES)].map(([id,label])=>`<button data-filter="${id}" class="${filter===id?'active':''}" aria-pressed="${filter===id}">${label}</button>`).join('')}</div><select id="origin-filter" aria-label="卡牌來源">${['all','精選','網路','全球','自訂'].map(o=>`<option value="${o}" ${origin===o?'selected':''}>${o==='all'?'所有來源':o}</option>`).join('')}</select></div>
+    <div class="world-filters"><span>${WORLD_COVERAGE.count.toLocaleString()} 全球模板 · ${Object.keys(WORLD_COVERAGE.languages).length} 種來源語言 · ${Object.keys(WORLD_COVERAGE.countries).length} 個來源地區</span><label>來源語言<select id="language-filter"><option value="all">所有語言</option>${Object.keys(WORLD_COVERAGE.languages).map(code=>`<option value="${code}" ${sourceLanguage===code?'selected':''}>${languageNames[code] || code}</option>`).join('')}<option value="unknown" ${sourceLanguage==='unknown'?'selected':''}>未標註</option></select></label><label>來源地區<select id="country-filter"><option value="all">所有地區</option>${Object.keys(WORLD_COVERAGE.countries).map(code=>`<option value="${code}" ${sourceCountry===code?'selected':''}>${regionNames.of(code)}</option>`).join('')}</select></label><label>梗意能力<select id="ability-filter"><option value="all">所有能力</option>${Object.entries(ARCHETYPES).map(([id,a])=>`<option value="${id}" ${ability===id?'selected':''}>${a.name}</option>`).join('')}</select></label></div>
     <div class="collection-layout"><section><div class="results-heading"><span>${filtered.length} 張卡牌</span><span>ALL UNLOCKED</span></div><div class="catalog-grid">${filtered.slice(0,visible).map(c=>cardHTML(c)).join('') || '<div class="empty-state">沒有符合條件的卡牌。</div>'}</div>${filtered.length>visible?`<button class="quiet-button load-more" data-action="more">載入更多 ${icon('plus')}</button>`:''}</section>${deckSidebar()}</div></main>`;
 }
 function deckSidebar() {
@@ -133,7 +138,8 @@ function showCard(id, handIndex = null) {
     ${isUnit(c)?`<section class="set-detail" aria-label="連攜套裝">${setRulesHTML(c.tag)}<p>${c.type==='fusion'?'融合後改用素材陣營的套裝；兩份素材合為 1 件。':'同一方存活的同陣營角色各計 1 件；3 件效果與 2 件效果疊加。'}</p></section>`:''}
     ${handIndex!==null?`<label class="target-select">優先目標<select id="play-target"><option value="">自動選擇</option>${game.units.filter(u=>u.hp>0).map(u=>`<option value="${u.uid}">${u.side===game.active?'友軍':'敵軍'} · ${esc(u.name)} (${u.hp} HP)</option>`).join('')}</select></label><p class="form-error">${esc(error)}</p><button class="primary-button" data-play="${handIndex}" ${error?'disabled':''}>${icon(c.type==='monster'?'swords':'sparkles')} ${c.type==='monster'?'召喚角色':c.type==='trap'?'設置陷阱':c.type==='fusion'?'融合召喚':'發動卡牌'}</button>`:
     `<button class="primary-button" data-add="${esc(c.id)}">${icon('plus')} 加入卡組</button><button class="quiet-button" data-template="${esc(c.id)}">${icon('hammer')} 以此為範本</button>${c.origin==='自訂'?`<button class="text-button danger" data-delete="${esc(c.id)}">${icon('trash-2')} 刪除自訂卡</button>`:''}`}
-    ${c.source?`<a class="source-link" href="${esc(c.source)}" target="_blank" rel="noopener noreferrer">圖片來源：Imgflip ${icon('arrow-up-right')}</a>`:'<span class="source-link">玩家自訂作品</span>'}</div></div>`, 'card-modal');
+    ${c.evidence?`<section class="meaning-detail"><b>梗意設計 · ${esc(ARCHETYPES[c.archetype]?.name || '待設定')}</b>${c.sourceName&&c.sourceName!==c.name?`<p>原始名稱：${esc(c.sourceName)}</p>`:''}<p>依據${c.evidence.field==='name'?'名稱':'來源標籤'}：${esc(c.evidence.value)}</p><p>${esc(c.flavor)}</p>${c.languages?.length?`<p>來源語言：${c.languages.map(code=>esc(languageNames[code] || code)).join(' · ')}</p>`:''}</section>`:''}
+    ${c.source?`<a class="source-link" href="${esc(c.source)}" target="_blank" rel="noopener noreferrer">來源：${c.origin==='全球'?'templates.meme':'Imgflip'} ${icon('arrow-up-right')}</a>`:'<span class="source-link">玩家自訂作品</span>'}</div></div>`, 'card-modal');
 }
 function newDialog(showFields = false) {
   openDialog(`<div class="dialog-heading"><span class="eyebrow accent">NEXT MATCH</span><h2>${showFields?'選擇你的戰場':'建立新對決'}</h2></div><form id="match-form"><div class="match-options"><label>對手<select name="mode"><option value="ai" ${game.mode==='ai'?'selected':''}>網路混沌 AI</option><option value="local" ${game.mode==='local'?'selected':''}>同機雙人</option></select></label><label>勝利目標<select name="goal">${[['classic','生命決勝 · 20 LP'],['knockout','率先擊倒 5 名角色'],['sandbox','自由沙盒 · 無限能量']].map(([v,t])=>`<option value="${v}" ${game.goal===v?'selected':''}>${t}</option>`).join('')}</select></label></div><fieldset class="field-picker"><legend>場地</legend>${FIELDS.map((f,i)=>`<label class="field-option" style="--field:${f.color}"><input type="radio" name="field" value="${f.id}" ${game.field===f.id?'checked':''}><span class="field-art field-art-${f.id}"><span>0${i+1}</span>${icon(f.id==='fine'?'flame':f.id==='moon'?'sparkles':f.id==='xp'?'heart':'layers')}</span><b>${f.name}</b><small>${f.description}</small></label>`).join('')}</fieldset><p id="match-error" class="form-error" role="alert"></p><button class="primary-button" type="submit">${icon('swords')} 開始新對決 ${icon('arrow-right')}</button></form>`, 'match-modal');
@@ -244,6 +250,9 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('change', e=>{
   if(e.target.id==='origin-filter') {origin=e.target.value;visible=24;render();}
+  if(e.target.id==='language-filter') {sourceLanguage=e.target.value;visible=24;render();}
+  if(e.target.id==='country-filter') {sourceCountry=e.target.value;visible=24;render();}
+  if(e.target.id==='ability-filter') {ability=e.target.value;visible=24;render();}
   if(e.target.name==='type') syncTriggers();
 });
 document.addEventListener('submit', e=>{
@@ -254,7 +263,7 @@ document.addEventListener('submit', e=>{
   if(e.target.id==='card-form') {
     e.preventDefault(); const data=Object.fromEntries(new FormData(e.target));
     data.effects=[...$('#effect-rows').children].map(row=>({trigger:$('[name="trigger"]',row).value,action:$('[name="action"]',row).value,target:$('[name="target"]',row).value,amount:Number($('[name="amount"]',row).value)}));
-    try { const card=validateCustom(data); profile.custom.push(card);catalog=collect();persist();formBase=null;screen='collection';origin='自訂';filter='all';query='';render();toast(`已鑄造「${card.name}」`); } catch(error) {$('#form-error').textContent=error.message;}
+    try { const card=validateCustom(data); profile.custom.push(card);catalog=collect();persist();formBase=null;screen='collection';origin='自訂';filter='all';sourceLanguage='all';sourceCountry='all';ability='all';query='';render();toast(`已鑄造「${card.name}」`); } catch(error) {$('#form-error').textContent=error.message;}
   }
 });
 document.addEventListener('error', e=>{if(e.target instanceof HTMLImageElement) {const parent=e.target.parentElement;e.target.remove();parent.classList.add('image-failed');parent.setAttribute('data-fallback','MEME');}},true);
