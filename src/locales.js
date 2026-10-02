@@ -1,5 +1,27 @@
 // Source-language keys keep domain values and imported card data independent of UI language.
 const rows = `
+調整站位|Reposition|配置変更|Cambiar posición
+台詞或備註|Quote or note|セリフやメモ|Frase o nota
+對戰|Duel|対戦|Duelo
+角色區|Unit zone|ユニットゾーン|Zona de unidades
+魔法區|Spell zone|魔法ゾーン|Zona de hechizos
+場地區|Field zone|フィールドゾーン|Zona de campo
+牌庫|Deck|デッキ|Mazo
+墓地|Discard|墓地|Descarte
+卡牌詳情|Card details|カード詳細|Detalles de la carta
+取消選擇|Clear selection|選択解除|Cancelar selección
+已取消|Cancelled|キャンセル済み|Cancelado
+位置無效|Invalid position|無効な位置|Posición no válida
+這個位置已有角色|This position is occupied.|この位置にはユニットがいます。|Esta posición está ocupada.
+角色要放在自己的角色區|Use your own unit zone.|自分のユニットゾーンに置いてください。|Usa tu zona de unidades.
+陷阱要放在空的陷阱區|Use an empty trap zone.|空いている罠ゾーンに置いてください。|Usa una zona de trampas vacía.
+場地卡要放在場地區|Use the field zone.|フィールドゾーンに置いてください。|Usa la zona de campo.
+這張卡不能指定這個目標|This card cannot target that unit.|このユニットは対象にできません。|Esta carta no puede elegir esa unidad.
+裝備要交給自己的角色|Choose one of your units.|自分のユニットを選んでください。|Elige una de tus unidades.
+這裡不能發動這張卡|This card cannot be played here.|ここではこのカードを使えません。|Esta carta no se puede jugar aquí.
+只能調整自己的角色位置|Only your units can be repositioned.|移動できるのは自分のユニットだけです。|Solo puedes mover tus unidades.
+放開出牌|Ready to play|プレイ可能|Lista para jugar
+同陣營角色湊滿 2 名或 3 名就有加成，重複卡也算。角色離場後重新計算，已拿到的能量、手牌與護盾不會收回。|Two or three units of one faction unlock set bonuses. Copies count too. Bonuses are recalculated when a unit leaves; energy, cards and shields already gained remain.|同陣営のユニットが2体・3体揃うとセット効果が発動。同じカードも数えます。退場時に再計算しますが、獲得したエネルギー・手札・シールドは残ります。|Dos o tres unidades de la misma facción activan bonificaciones. Las copias cuentan. Al salir una unidad se recalculan, pero conservas la energía, las cartas y los escudos obtenidos.
 所有角色碰撞速度提升 35%。|All units gain 35% collision speed.|全ユニットの衝突速度が 35% 上昇。|Todas las unidades ganan un 35% de velocidad de choque.
 笑著，撐過這一回合。|Smile through this round.|笑顔で、このラウンドを乗り切ろう。|Sonríe y aguanta esta ronda.
 有些人，只想看場地燃燒。|Some just want to watch the arena burn.|ただフィールドが燃えるのを見たい者もいる。|Algunos solo quieren ver arder la arena.

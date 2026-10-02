@@ -16,8 +16,9 @@ export function combos(g, side, required = 2) {
   for (const u of units(g, side)) count[u.tag] = (count[u.tag] || 0) + 1;
   return Object.keys(count).filter(tag => count[tag] >= required);
 }
-export function summon(g, card, side) {
-  const unit = { ...structuredClone(card), uid: `u${g.nextId++}`, side, maxHp: card.hp, shield: 0, dead: false, hitUsed: false };
+export function summon(g, card, side, slot) {
+  slot ??= [0,1,2].find(n=>!units(g,side).some(u=>u.slot===n)) ?? 0;
+  const unit = { ...structuredClone(card), uid: `u${g.nextId++}`, side, slot, maxHp: card.hp, shield: 0, dead: false, hitUsed: false };
   g.units.push(unit);
   return unit;
 }
@@ -67,7 +68,7 @@ export function fusionPair(g, side) {
   const alive = units(g, side);
   return alive.flatMap((a, i) => alive.slice(i + 1).filter(b => b.tag === a.tag).map(b => [a, b]))[0];
 }
-export function playError(g, side, index, targetId) {
+export function playError(g, side, index, targetId, slot) {
   const p = g.players[side], card = g.cards[p?.hand[index]];
   if (g.phase !== 'plan' || p?.ready || g.active !== side) return '現在不是你的部署階段';
   if (!card) return '找不到卡牌';
@@ -77,7 +78,19 @@ export function playError(g, side, index, targetId) {
   if (card.type === 'trap' && p.traps.length >= 2) return '最多設置 2 張陷阱';
   if (card.type === 'equip' && !units(g, side).length) return '先召喚一名角色';
   if (targetId && !g.units.some(u => u.uid === targetId && u.hp > 0)) return '目標已離場';
+  if (slot !== undefined && isUnit(card)) {
+    const materials = card.type==='fusion' ? fusionPair(g,side) : [];
+    if (!Number.isInteger(slot) || slot<0 || slot>2) return '位置無效';
+    if (units(g,side).some(u=>u.slot===slot&&!materials.includes(u))) return '這個位置已有角色';
+  }
   return '';
+}
+export function moveUnit(g, side, uid, slot) {
+  const unit=units(g,side).find(u=>u.uid===uid);
+  if(g.phase!=='plan'||g.active!==side||g.players[side].ready||!unit||!Number.isInteger(slot)||slot<0||slot>2)return false;
+  const other=units(g,side).find(u=>u.slot===slot);
+  if(other)other.slot=unit.slot;
+  unit.slot=slot;return true;
 }
 function targets(g, side, target, source, targetId) {
   const friends = units(g, side), enemies = units(g, 1 - side);
@@ -122,8 +135,8 @@ export function checkWinner(g) {
   const won = g.players.map((p, i) => g.goal === 'knockout' ? p.ko >= 5 : g.players[1 - i].hp <= 0);
   if (won.some(Boolean)) { g.winner = won.every(Boolean) ? 'draw' : won[0] ? 0 : 1; g.phase = 'over'; }
 }
-export function playCard(g, side, index, targetId) {
-  const error = playError(g, side, index, targetId);
+export function playCard(g, side, index, targetId, slot) {
+  const error = playError(g, side, index, targetId, slot);
   if (error) return { ok: false, error };
   const p = g.players[side], card = g.cards[p.hand[index]];
   const before = combos(g, side);
@@ -134,9 +147,9 @@ export function playCard(g, side, index, targetId) {
   if (card.type === 'fusion') {
     const pair = fusionPair(g, side);
     for (const u of pair) { g.units.splice(g.units.indexOf(u), 1); p.discard.push(u.id); }
-    source = summon(g, { ...card, tag: pair[0].tag, attack: card.attack + Math.floor((pair[0].attack + pair[1].attack) / 2) }, side);
+    source = summon(g, { ...card, tag: pair[0].tag, attack: card.attack + Math.floor((pair[0].attack + pair[1].attack) / 2) }, side, slot);
     note(g, `${pair.map(u => u.name).join(' + ')} → ${card.name}`, 'combo');
-  } else if (card.type === 'monster') source = summon(g, card, side);
+  } else if (card.type === 'monster') source = summon(g, card, side, slot);
   else if (card.type === 'trap') p.traps.push(card.id);
   else {
     if (card.type === 'field') g.field = card.field;

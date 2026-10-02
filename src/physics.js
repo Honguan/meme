@@ -16,7 +16,7 @@ export function createBattle(game, onImpact = () => {}) {
   for (let side = 0; side < 2; side++) {
     const team = units(game, side);
     team.forEach((unit, i) => {
-      const body = Bodies.circle(side ? WIDTH - 200 : 200, HEIGHT * (i + 1) / (team.length + 1), 36,
+      const body = Bodies.circle(side ? WIDTH - 200 : 200, HEIGHT * ((unit.slot ?? i) + 1) / 4, 36,
         { restitution: 0.9, friction: 0, frictionAir: 0, label: unit.uid });
       Body.setVelocity(body, { x: (side ? -1 : 1) * unit.speed, y: (i - (team.length - 1) / 2) * 0.5 });
       Composite.add(engine.world, body); bodies.set(unit.uid, body);

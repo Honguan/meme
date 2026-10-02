@@ -119,7 +119,7 @@ export class Arena {
       team.forEach((u, index) => {
         const body = this.battle?.bodies.get(u.uid);
         const x = body?.position.x ?? (side ? WIDTH - 235 : 235) + (team.length > 1 ? index % 2 * (side ? -45 : 45) : 0);
-        const y = body?.position.y ?? HEIGHT * (index + 1) / (team.length + 1);
+        const y = body?.position.y ?? HEIGHT * ((u.slot ?? index) + 1) / 4;
         if (body && !this.reduced && !this.endingAt) {
           c.save(); c.strokeStyle = TAGS[u.tag].color; c.lineCap = 'round';
           for (let i = 1; i <= 3; i++) {

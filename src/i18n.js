@@ -47,7 +47,7 @@ export function localize(root) {
     if(!node.parentElement.closest(originalContent)&&/\p{Script=Han}/u.test(node.nodeValue))node.nodeValue=tr(node.nodeValue);
   }
   for(const element of [root,...root.querySelectorAll('[aria-label],[title],[placeholder]')]){
-    if(element.closest(originalContent)||element.matches('.meme-card'))continue;
+    if(element.closest(originalContent)||element.matches('.meme-card,.board-slot,.support-slot'))continue;
     for(const attr of ['aria-label','title','placeholder'])if(element.hasAttribute(attr))element.setAttribute(attr,tr(element.getAttribute(attr)));
   }
 }

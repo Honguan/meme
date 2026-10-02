@@ -1,13 +1,15 @@
 import { createIcons, Swords, Layers, Hammer, Search, SlidersHorizontal, ArrowUpRight, ArrowRight, ArrowLeft, Plus, Minus, X, Zap, Shield, Heart, Sparkles, Volume2, VolumeX, RotateCcw, Github, Download, Upload, RefreshCw, Trash2, Check, ChevronRight, Target, Flame, Trophy, Palette } from 'lucide';
 import { CATALOG, TYPES, TAGS, FIELDS, ACTIONS, TARGETS, TRIGGERS, PRESETS, WORLD_COVERAGE, templateCards, validateCustom, effectText } from './catalog.js';
 import { ARCHETYPES } from './semantics.js';
-import { createGame, createDailyGame, randomWorldDeck, playCard, playError, units, combos, planAI, finishRound, isUnit } from './game.js';
+import { createGame, createDailyGame, randomWorldDeck, playCard, playError, units, combos, planAI, finishRound, isUnit, moveUnit } from './game.js';
+import { bindDrag, dropIntent } from './drag.js';
 import { Arena } from './arena.js';
 import { mountPreview } from './preview.js';
 import { THEMES, loadTheme, applyTheme } from './preferences.js';
 import { LANGUAGES, getLocale, setLocale, tr, localize } from './i18n.js';
 import { loadProfile, saveProfile, parseProfile } from './storage.js';
 import './style.css';
+import './duel.css';
 
 const icons = { Swords, Layers, Hammer, Search, SlidersHorizontal, ArrowUpRight, ArrowRight, ArrowLeft, Plus, Minus, X, Zap, Shield, Heart, Sparkles, Volume2, VolumeX, RotateCcw, Github, Download, Upload, RefreshCw, Trash2, Check, ChevronRight, Target, Flame, Trophy, Palette };
 document.documentElement.dataset.theme=loadTheme();
@@ -21,6 +23,7 @@ let catalog = collect();
 let game = createGame({ catalog, deck: validDeck() });
 let screen = 'battle', arena, query = '', filter = 'all', origin = 'all', visible = 24, mute = true, audio, counted = false;
 let handoff = false, toastTimer, formBase = null;
+let selected = null, dragging = false, cancelDrag;
 let previewTimer, hoverCard, stopHoverPreview, stopModalPreview;
 const hoverPreview = document.createElement('aside');
 hoverPreview.className = 'hover-preview'; hoverPreview.hidden = true; hoverPreview.id = 'card-effect-preview';
@@ -60,12 +63,13 @@ function cardHTML(card, index = null) {
 function header() {
   return `<header class="topbar"><a href="#battle" class="brand" aria-label="MEME CLASH 首頁"><span class="brand-mark">${icon('swords')}</span><span>MEME<span class="brand-light">CLASH</span><small>迷因亂鬥</small></span></a>
     <nav aria-label="主要導覽">${[['battle','swords','對決'],['collection','layers','卡牌圖鑑'],['workshop','hammer','卡組工坊']].map(([id, glyph, text]) => `<button class="nav-item ${screen === id ? 'active' : ''}" data-nav="${id}" ${game.phase === 'battle' ? 'disabled' : ''} ${screen === id ? 'aria-current="page"' : ''}>${icon(glyph)}<span>${text}</span></button>`).join('')}</nav>
-    <div class="header-end"><span class="edition">OPEN PLAY <b>01</b></span><button class="icon-button" data-action="appearance" title="語言與色系" aria-label="語言與色系" ${game.phase==='battle'?'disabled':''}>${icon('palette')}</button><a class="icon-button" href="https://github.com/Honguan/meme" target="_blank" rel="noopener noreferrer" title="GitHub 開源程式碼" aria-label="GitHub 開源程式碼">${icon('github')}</a><button class="icon-button" data-action="sound" aria-label="${mute ? '開啟音效' : '關閉音效'}" title="${mute ? '開啟音效' : '關閉音效'}" aria-pressed="${!mute}">${icon(mute ? 'volume-x' : 'volume-2')}</button></div>
+    <div class="header-end"><button class="icon-button" data-action="appearance" title="語言與色系" aria-label="語言與色系" ${game.phase==='battle'?'disabled':''}>${icon('palette')}</button><a class="icon-button" href="https://github.com/Honguan/meme" target="_blank" rel="noopener noreferrer" title="GitHub 開源程式碼" aria-label="GitHub 開源程式碼">${icon('github')}</a><button class="icon-button" data-action="sound" aria-label="${mute ? '開啟音效' : '關閉音效'}" title="${mute ? '開啟音效' : '關閉音效'}" aria-pressed="${!mute}">${icon(mute ? 'volume-x' : 'volume-2')}</button></div>
   </header>`;
 }
 function playerHUD(side) {
   const p = game.players[side];
-  return `<div class="player-hud side-${side}"><span class="player-number">0${side + 1}</span><div class="player-info"><span class="eyebrow">${side && game.mode === 'ai' ? 'CPU / OPPONENT' : 'DUELIST'}</span><b>${p.name}</b><div class="life-track"><span style="width:${p.hp / 20 * 100}%"></span></div></div><div class="life"><b>${p.hp}</b><small>LP</small></div></div>`;
+  const face=units(game,side)[0];
+  return `<div class="player-hud side-${side}"><span class="duelist-avatar">${face?image(face):icon('swords')}</span><div class="player-info"><b>${p.name}</b><div class="life-track"><span style="width:${p.hp / 20 * 100}%"></span></div></div><div class="life"><small>LP</small><b>${p.hp}</b></div></div>`;
 }
 function logHTML() { return game.log.slice(0, 6).map(l => `<li class="log-${l.kind}"><small>${String(l.round).padStart(2,'0')}</small><span data-original>${esc(tr(l.text))}</span></li>`).join(''); }
 function setProgressHTML() {
@@ -80,28 +84,38 @@ function setRulesHTML(tag) {
 }
 function battleHTML() {
   const p = game.players[game.active], field = FIELDS.find(f => f.id === game.field), tags = combos(game, game.active);
-  return `<main class="battle-page"><div class="page-heading"><div><span class="eyebrow accent">THE MEMEVERSE</span><h1>讓迷因，正面對決<span class="period">.</span></h1></div><button class="quiet-button" data-action="new" ${game.phase === 'battle' ? 'disabled' : ''}>${icon('rotate-ccw')} 新對決</button></div>
-    <div class="battle-layout"><section class="battle-main" aria-label="對戰區"><div class="battle-topline"><span class="live-dot"></span><b>${game.challenge ? `每日挑戰 ${game.challenge}` : game.mode === 'ai' ? '人機對決' : '同機雙人'}</b><span class="mode-label">${{classic:'生命決勝',knockout:'五次擊倒',sandbox:'自由沙盒'}[game.goal]}</span><span class="round-label">ROUND <b id="round-number">${String(game.round).padStart(2,'0')}</b></span></div>
-    <div class="scoreboard" id="scoreboard">${playerHUD(0)}<div class="versus">VS</div>${playerHUD(1)}</div>
-    <div class="arena-wrap field-${field.id}"><canvas id="arena" aria-label="迷因角色 2D 物理碰撞戰場" role="img"></canvas><div class="arena-stage"><span class="stage-index">ARENA ${String(FIELDS.indexOf(field) + 1).padStart(2,'0')}</span><span>${esc(field.name)}</span></div><span class="phase-chip" id="phase-chip">${game.phase === 'battle' ? '碰撞對決中' : game.phase === 'over' ? '對決結束' : '部署階段'}</span></div>
-    <div class="field-bar"><span>${icon('layers')}<b>${esc(field.name)}</b><small>${esc(field.description)}</small></span><button class="text-button" data-action="fields" ${game.phase === 'battle' ? 'disabled' : ''}>更換場地 ${icon('arrow-up-right')}</button></div>
-    <div class="unit-strip">${[0,1].map(side => `<div class="unit-team side-${side}">${[0,1,2].map(i => { const u = units(game, side)[i]; return u ? `<span class="unit-chip">${image(u)}<b>${esc(u.name)}</b><small>${u.hp} HP</small></span>` : `<span class="unit-empty">${icon('plus')} 角色席位</span>`; }).join('')}</div>`).join('')}</div>
-    </section><aside class="battle-aside"><div class="aside-title"><h2>戰局</h2><span class="mono">LIVE FEED</span></div>
-      <div class="energy-box"><span>${icon('zap')} 可用能量</span><strong>${game.goal === 'sandbox' ? '∞' : p.energy}<small>${game.goal === 'sandbox' ? 'FREE' : `/ ${Math.min(8, 2 + game.round)}`}</small></strong><div class="energy-pips">${Array.from({length:8},(_,i)=>`<i class="${i < p.energy || game.goal === 'sandbox' ? 'filled' : ''}"></i>`).join('')}</div></div>
-      <div class="synergy-section"><h3>${icon('sparkles')} 連攜套裝 <span id="set-count">${tags.length}</span></h3><div class="synergies" id="set-progress">${setProgressHTML()}</div><details class="set-guide"><summary>套裝效果 · 2 / 3 件</summary><p>同一方存活的同陣營角色各計 1 件；重複卡也計入。3 件效果與 2 件效果疊加，離場即失去門檻加成；已獲得的資源保留。</p>${Object.keys(TAGS).map(setRulesHTML).join('')}</details></div>
-      <div class="trap-section"><h3>${icon('shield')} 陷阱區</h3><div class="trap-slots">${[0,1].map(i => `<span class="${p.traps[i] ? 'armed' : ''}">${icon(p.traps[i] ? 'shield' : 'plus')}${p.traps[i] ? '已設置' : '空席'}</span>`).join('')}</div></div>
-      <div class="log-section"><h3>對決紀錄<span id="collision-count">${game.collisions} 次碰撞</span></h3><ol id="battle-log" aria-live="polite" aria-relevant="additions">${logHTML()}</ol></div>
-    </aside></div>
-    <section class="hand-section" aria-label="手牌"><div class="hand-heading"><div><h2>${game.mode === 'local' ? `${p.name} 的` : '你的'}手牌 <span>${handoff ? '?' : p.hand.length}</span></h2><small>DECK ${p.deck.length} <span>/</span> DISCARD ${p.discard.length}</small></div><div class="turn-action"><span>${game.phase === 'battle' ? '迷因正在碰撞' : game.phase === 'over' ? 'GG. 再來一局？' : '你的回合'}</span><button class="primary-button clash-button" data-action="clash" ${game.phase !== 'plan' || handoff ? 'disabled' : ''}>${icon('swords')} ${game.mode === 'local' && game.active === 0 ? '完成部署' : '開始碰撞'} ${icon('arrow-right')}</button></div></div>
-    <div class="hand-cards">${handoff ? '<div class="empty-state">等待玩家 02 接手</div>' : p.hand.map((id,i)=>cardHTML(game.cards[id],i)).join('') || '<div class="empty-state">手牌已用盡，下回合繼續抽牌。</div>'}</div></section>
-    <footer class="battle-footer"><span>MEME CLASH <b>自由開打。認真亂鬥。</b></span><span>${catalog.length} CARDS <i>/</i> ${FIELDS.length} ARENAS <i>/</i> ${profile.stats.wins} WINS</span></footer></main>`;
+  return `<main class="duel-page"><div class="duel-toolbar"><h1>對戰</h1><span>${game.challenge?`每日挑戰 ${game.challenge}`:game.mode==='ai'?'人機對決':'同機雙人'}</span><span>${{classic:'生命決勝',knockout:'五次擊倒',sandbox:'自由沙盒'}[game.goal]}</span><button class="text-button" data-action="daily" ${game.phase==='battle'?'disabled':''}>${icon('trophy')} 每日挑戰</button><button class="icon-button" data-action="new" title="新對決" aria-label="新對決" ${game.phase==='battle'?'disabled':''}>${icon('rotate-ccw')}</button></div>
+    <div class="duel-layout"><aside class="card-inspector" id="card-inspector">${inspectorHTML()}</aside>
+    <section class="duel-table" aria-label="對戰區"><div id="scoreboard" class="duel-scoreboard">${playerHUD(1-game.active)}${playerHUD(game.active)}</div>
+      <div class="duel-round"><span id="phase-chip">${game.phase==='battle'?'碰撞對決中':game.phase==='over'?'對決結束':'部署階段'}</span><span>回合 <b id="round-number">${String(game.round).padStart(2,'0')}</b></span></div>
+      <div class="duel-board ${game.phase==='battle'?'is-battling':''}" data-phase="${game.phase}"><canvas id="arena" aria-label="迷因角色 2D 物理碰撞戰場" role="img"></canvas>
+        <div class="formation opponent-formation">${formationHTML(1-game.active)}</div>
+        <div class="board-midline"><button class="field-token" data-drop data-kind="field" data-side="${game.active}" aria-label="場地區" title="${esc(field.description)}">${icon('layers')}<span>${esc(field.name)}</span></button><span class="board-wordmark">MEME<span>CLASH</span></span><button class="cast-zone" data-drop data-kind="cast" data-side="${game.active}" aria-label="魔法區">${icon('sparkles')}<span>魔法區</span></button></div>
+        <div class="formation own-formation">${formationHTML(game.active)}</div>
+        <div class="drop-status" id="drop-status" role="status" aria-live="polite"></div>
+      </div>
+      <div class="duel-actions"><div class="energy-box"><span>${icon('zap')} 能量</span><strong>${game.goal==='sandbox'?'∞':p.energy}<small>/ ${Math.min(8,2+game.round)}</small></strong></div><span class="pile-count">${icon('layers')} ${p.deck.length}<small>牌庫</small></span><span class="pile-count">${icon('trash-2')} ${p.discard.length}<small>墓地</small></span><button class="primary-button clash-button" data-action="clash" ${game.phase!=='plan'||handoff?'disabled':''}>${icon('swords')} ${game.mode==='local'&&game.active===0?'完成部署':'開始碰撞'} ${icon('arrow-right')}</button></div>
+      <section class="hand-section" aria-label="手牌"><div class="hand-heading"><h2>手牌 <span>${handoff?'?':p.hand.length}</span></h2><button class="text-button" data-action="fields" ${game.phase==='battle'?'disabled':''}>更換場地 ${icon('arrow-up-right')}</button></div><div class="hand-cards">${handoff?'<div class="empty-state">等待玩家 02 接手</div>':p.hand.map((id,i)=>cardHTML(game.cards[id],i)).join('')||'<div class="empty-state">手牌已用盡，下回合繼續抽牌。</div>'}</div></section>
+    </section><aside class="duel-feed"><div class="synergy-section"><h3>${icon('sparkles')} 連攜套裝 <span id="set-count">${tags.length}</span></h3><div class="synergies" id="set-progress">${setProgressHTML()}</div><details class="set-guide"><summary>套裝效果 · 2 / 3 件</summary><p>同陣營角色湊滿 2 名或 3 名就有加成，重複卡也算。角色離場後重新計算，已拿到的能量、手牌與護盾不會收回。</p>${Object.keys(TAGS).map(setRulesHTML).join('')}</details></div><div class="log-section"><h3>對決紀錄<span id="collision-count">${game.collisions} 次碰撞</span></h3><ol id="battle-log" aria-live="polite" aria-relevant="additions">${logHTML()}</ol></div></aside></div></main>`;
+}
+function formationHTML(side) {
+  const p=game.players[side];
+  return `<div class="support-slots">${[0,1].map(i=>`<button class="support-slot ${p.traps[i]?'armed':''}" data-drop data-kind="trap" data-side="${side}" ${p.traps[i]?'data-occupied="true"':''} aria-label="${tr('陷阱區')} ${i+1}">${icon('shield')}<span>${p.traps[i]?'已設置':'陷阱區'}</span></button>`).join('')}</div><div class="unit-slots">${[0,1,2].map(slot=>{
+    const u=units(game,side).find(u=>u.slot===slot);
+    return `<button class="board-slot ${u?'occupied':''} side-${side}" data-drop data-kind="unit" data-side="${side}" data-slot="${slot}" ${u?`data-unit="${u.uid}" data-uid="${u.uid}"`:''} aria-label="${tr(side===game.active?'友軍':'敵軍')} ${slot+1}${u?` ${esc(u.name)}`:''}" ${game.phase!=='plan'||handoff?'disabled':''}>${u?`${image(u)}<span class="board-unit-name" data-original>${esc(u.name)}</span><span class="board-stats"><b>${icon('swords')} ${u.attack}</b><b>${icon('heart')} ${u.hp}</b>${u.shield?`<b>${icon('shield')} ${u.shield}</b>`:''}</span><span class="unit-faction" style="--tag:${TAGS[u.tag].color}"></span>`:`${icon('plus')}<span>角色區</span><small>0${slot+1}</small>`}</button>`;
+  }).join('')}</div>`;
+}
+function selectedCard() { return selected?.uid?game.units.find(u=>u.uid===selected.uid):game.cards[game.players[game.active].hand[selected?.index ?? 0]]; }
+function inspectorHTML() {
+  const c=handoff?null:selectedCard();
+  return c?`<div class="inspector-art">${image(c)}</div><div class="inspector-copy"><span class="eyebrow">${TYPES[c.type]} · ${TAGS[c.tag].name}</span><h2 data-original>${esc(c.name)}</h2><p>${esc(effectText(c))}</p><div class="inspector-stats">${icon('zap')} ${c.cost}${isUnit(c)?`${icon('swords')} ${c.attack}${icon('heart')} ${c.hp}`:''}</div><button class="text-button" data-action="inspect">卡牌詳情 ${icon('arrow-up-right')}</button>${selected?`<button class="icon-button cancel-selection" data-action="cancel-selection" aria-label="取消選擇" title="取消選擇">${icon('x')}</button>`:''}</div>`:'<div class="inspector-empty">MEME CLASH</div>';
 }
 function collectionHTML() {
   const filtered = catalog.filter(c => (filter === 'all' || c.type === filter) && (origin === 'all' || c.origin === origin) && (sourceLanguage === 'all' || (sourceLanguage === 'unknown' ? !c.languages?.length : c.languages?.includes(sourceLanguage))) && (sourceCountry === 'all' || c.countries?.includes(sourceCountry)) && (ability === 'all' || c.archetype === ability) && `${c.name} ${TAGS[c.tag].name} ${TAGS[c.tag].set} ${c.flavor} ${ARCHETYPES[c.archetype]?.name || ''} ${tr(TAGS[c.tag].name)} ${tr(TAGS[c.tag].set)} ${tr(ARCHETYPES[c.archetype]?.name || '')} ${effectText(c)}`.toLowerCase().includes(query.toLowerCase()));
-  return `<main class="collection-page"><div class="page-heading"><div><span class="eyebrow accent">THE COLLECTION</span><h1>整個網路，都是你的牌庫<span class="period">.</span></h1></div><button class="quiet-button" data-action="refresh">${icon('refresh-cw')} 更新網路卡庫</button></div>
+  return `<main class="collection-page"><div class="page-heading"><h1>卡牌圖鑑</h1><button class="quiet-button" data-action="refresh">${icon('refresh-cw')} 更新網路卡庫</button></div>
     <div class="collection-toolbar"><label class="search-box">${icon('search')}<input id="search" type="search" placeholder="搜尋迷因、陣營或效果" aria-label="搜尋卡牌" value="${esc(query)}"></label><div class="filter-tabs" role="group" aria-label="卡牌類型">${[['all','全部'],...Object.entries(TYPES)].map(([id,label])=>`<button data-filter="${id}" class="${filter===id?'active':''}" aria-pressed="${filter===id}">${label}</button>`).join('')}</div><select id="origin-filter" aria-label="卡牌來源">${['all','精選','網路','全球','自訂'].map(o=>`<option value="${o}" ${origin===o?'selected':''}>${o==='all'?'所有來源':o}</option>`).join('')}</select></div>
     <div class="world-filters"><span>${WORLD_COVERAGE.count.toLocaleString()} 全球模板 · ${Object.keys(WORLD_COVERAGE.languages).length} 種來源語言 · ${Object.keys(WORLD_COVERAGE.countries).length} 個來源地區</span><label>來源語言<select id="language-filter"><option value="all">所有語言</option>${Object.keys(WORLD_COVERAGE.languages).map(code=>`<option value="${code}" ${sourceLanguage===code?'selected':''}>${languageNames[code] || code}</option>`).join('')}<option value="unknown" ${sourceLanguage==='unknown'?'selected':''}>未標註</option></select></label><label>來源地區<select id="country-filter"><option value="all">所有地區</option>${Object.keys(WORLD_COVERAGE.countries).map(code=>`<option value="${code}" ${sourceCountry===code?'selected':''}>${regionNames.of(code)}</option>`).join('')}</select></label><label>梗意能力<select id="ability-filter"><option value="all">所有能力</option>${Object.entries(ARCHETYPES).map(([id,a])=>`<option value="${id}" ${ability===id?'selected':''}>${a.name}</option>`).join('')}</select></label></div>
-    <div class="collection-layout"><section><div class="results-heading"><span>${filtered.length} 張卡牌</span><span>ALL UNLOCKED</span></div><div class="catalog-grid">${filtered.slice(0,visible).map(c=>cardHTML(c)).join('') || '<div class="empty-state">沒有符合條件的卡牌。</div>'}</div>${filtered.length>visible?`<button class="quiet-button load-more" data-action="more">載入更多 ${icon('plus')}</button>`:''}</section>${deckSidebar()}</div></main>`;
+    <div class="collection-layout"><section><div class="results-heading"><span>${filtered.length} 張卡牌</span></div><div class="catalog-grid">${filtered.slice(0,visible).map(c=>cardHTML(c)).join('') || '<div class="empty-state">沒有符合條件的卡牌。</div>'}</div>${filtered.length>visible?`<button class="quiet-button load-more" data-action="more">載入更多 ${icon('plus')}</button>`:''}</section>${deckSidebar()}</div></main>`;
 }
 function deckSidebar() {
   const count = new Map(); profile.deck.forEach(id=>count.set(id,(count.get(id)||0)+1));
@@ -112,15 +126,16 @@ function effectRow(value = { trigger: 'play', action: 'shield', target: 'self', 
 }
 function workshopHTML() {
   const c = formBase || { name:'', type:'monster', tag:'chaos', cost:2, attack:4, hp:12, speed:5, image:'', flavor:'', effects:[{ trigger:'play', action:'shield',target:'self',amount:3 }] };
-  return `<main class="workshop-page"><div class="page-heading"><div><span class="eyebrow accent">MAKE YOUR OWN RULES</span><h1>你的梗，你來定義<span class="period">.</span></h1></div><span class="small-count">${profile.custom.length} 張自訂卡牌</span></div>
+  return `<main class="workshop-page"><div class="page-heading"><h1>卡組工坊</h1><span class="small-count">${profile.custom.length} 張自訂卡牌</span></div>
     <div class="workshop-layout"><section class="workshop-main"><div class="preset-band"><h2>卡組流派</h2><div class="preset-options">${Object.entries(PRESETS).map(([id,p],i)=>`<button data-preset="${id}" class="preset"><span class="preset-icon preset-${i}">${icon(i===0?'swords':i===1?'flame':'heart')}</span><span><b>${p.name}</b><small>${p.deck.length} 張卡牌</small></span>${icon('arrow-up-right')}</button>`).join('')}</div></div>
     <div class="extra-play"><button class="quiet-button" data-action="random-deck">${icon('refresh-cw')} 全球隨機套裝</button><button class="quiet-button" data-action="daily">${icon('trophy')} 每日挑戰</button></div>
     <form id="card-form"><div class="form-heading"><h2>創作卡牌</h2><span>NEW CARD / ${String(profile.custom.length+1).padStart(3,'0')}</span></div>
-    <div class="form-grid"><label class="wide">卡牌名稱<input name="name" maxlength="72" value="${esc(c.name)}" placeholder="給你的傳說一個名字" required></label><label>類型<select name="type">${Object.entries(TYPES).map(([id,n])=>`<option value="${id}" ${c.type===id?'selected':''}>${n}</option>`).join('')}</select></label><label>陣營<select name="tag">${Object.entries(TAGS).map(([id,t])=>`<option value="${id}" ${c.tag===id?'selected':''}>${t.name}</option>`).join('')}</select></label><label>能量消耗<input name="cost" type="number" min="0" max="9" value="${c.cost}" required></label><label>碰撞速度<input name="speed" type="number" min="1" max="12" value="${c.speed}" required></label><label>攻擊力<input name="attack" type="number" min="0" max="99" value="${c.attack}" required></label><label>生命值<input name="hp" type="number" min="1" max="999" value="${Math.max(1,c.hp)}" required></label><label class="wide">圖片網址<input name="image" type="url" maxlength="2048" value="${esc(c.image)}" placeholder="https://…"></label><label class="wide">卡牌宣言<input name="flavor" maxlength="160" value="${esc(c.flavor)}" placeholder="這個梗的靈魂台詞"></label><label class="wide field-rule" ${c.type!=='field'?'hidden':''}>場地規則<select name="field">${FIELDS.map(f=>`<option value="${f.id}" ${c.field===f.id?'selected':''}>${f.name}：${f.description}</option>`).join('')}</select></label></div>
+    <div class="form-grid"><label class="wide">卡牌名稱<input name="name" maxlength="72" value="${esc(c.name)}" placeholder="卡牌名稱" required></label><label>類型<select name="type">${Object.entries(TYPES).map(([id,n])=>`<option value="${id}" ${c.type===id?'selected':''}>${n}</option>`).join('')}</select></label><label>陣營<select name="tag">${Object.entries(TAGS).map(([id,t])=>`<option value="${id}" ${c.tag===id?'selected':''}>${t.name}</option>`).join('')}</select></label><label>能量消耗<input name="cost" type="number" min="0" max="9" value="${c.cost}" required></label><label>碰撞速度<input name="speed" type="number" min="1" max="12" value="${c.speed}" required></label><label>攻擊力<input name="attack" type="number" min="0" max="99" value="${c.attack}" required></label><label>生命值<input name="hp" type="number" min="1" max="999" value="${Math.max(1,c.hp)}" required></label><label class="wide">圖片網址<input name="image" type="url" maxlength="2048" value="${esc(c.image)}" placeholder="https://…"></label><label class="wide">卡牌宣言<input name="flavor" maxlength="160" value="${esc(c.flavor)}" placeholder="台詞或備註"></label><label class="wide field-rule" ${c.type!=='field'?'hidden':''}>場地規則<select name="field">${FIELDS.map(f=>`<option value="${f.id}" ${c.field===f.id?'selected':''}>${f.name}：${f.description}</option>`).join('')}</select></label></div>
     <div class="form-heading effects-heading"><h3>效果連鎖</h3><button class="text-button" type="button" data-action="add-effect">${icon('plus')} 新增效果</button></div><div id="effect-rows">${c.effects.map(effectRow).join('')}</div><p class="form-error" id="form-error" role="alert"></p><button class="primary-button" type="submit">${icon('sparkles')} 鑄造卡牌</button></form>
     </section>${deckSidebar()}</div></main>`;
 }
 function render() {
+  cancelDrag?.();selected=null;
   hideHoverPreview();
   arena?.destroy(); arena = null;
   app.innerHTML = `${header()}${screen==='battle'?battleHTML():screen==='collection'?collectionHTML():workshopHTML()}`;
@@ -130,7 +145,7 @@ function render() {
   localize(app);
 }
 function updateBattleHUD() {
-  $('#scoreboard').innerHTML = playerHUD(0) + '<div class="versus">VS</div>' + playerHUD(1);
+  $('#scoreboard').innerHTML = playerHUD(1-game.active) + playerHUD(game.active);
   $('#battle-log').innerHTML = logHTML(); $('#collision-count').textContent = tr(`${game.collisions} 次碰撞`);
   $('#set-progress').innerHTML = setProgressHTML();
   $('#set-count').textContent = combos(game, game.active).length;
@@ -234,7 +249,7 @@ function hideHoverPreview() {
   hoverCard?.removeAttribute('aria-describedby');hoverCard=null;hoverPreview.hidden=true;hoverPreview.replaceChildren();
 }
 function queueHoverPreview(button) {
-  if (!button || modal.open || game.phase==='battle' || button===hoverCard) return;
+  if (!button || modal.open || dragging || selected || game.phase==='battle' || button===hoverCard) return;
   hideHoverPreview();hoverCard=button;
   previewTimer=setTimeout(()=>{
     if (!button.isConnected || modal.open) return;
@@ -251,13 +266,64 @@ document.addEventListener('pointerover',e=>{if(e.pointerType!=='touch')queueHove
 document.addEventListener('pointerout',e=>{if(hoverCard&&hoverCard.contains(e.target)&&!hoverCard.contains(e.relatedTarget))hideHoverPreview();});
 document.addEventListener('focusin',e=>queueHoverPreview(e.target.closest('.meme-card')));
 document.addEventListener('focusout',e=>{if(hoverCard?.contains(e.target))hideHoverPreview();});
-document.addEventListener('keydown',e=>{if(e.key==='Escape')hideHoverPreview();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){hideHoverPreview();selected=null;paintSelection();}});
 window.addEventListener('scroll',()=>{
   const target=hoverCard;hideHoverPreview();
   if(target?.isConnected&&target.matches(':hover,:focus'))queueHoverPreview(target);
 },true);
 window.addEventListener('resize',hideHoverPreview);
 modal.addEventListener('close',()=>{stopModalPreview?.();stopModalPreview=null;$('#modal-preview-stage')?.replaceChildren();});
+
+function selectPiece(button) {
+  clearTimeout(toastTimer);$('#toast').classList.remove('show');
+  hideHoverPreview();
+  selected=button.dataset.hand!==undefined?{index:Number(button.dataset.hand)}:{uid:button.dataset.unit};
+  paintSelection();
+}
+function selectionIntent(zone) {
+  if(!selected||!zone)return {error:'已取消'};
+  if(selected.uid)return {error:zone.dataset.kind==='unit'&&Number(zone.dataset.side)===game.active?'':'只能調整自己的角色位置',slot:Number(zone.dataset.slot)};
+  return dropIntent(game,selected.index,zone.dataset);
+}
+function paintSelection() {
+  if(screen!=='battle'||!$('#card-inspector'))return;
+  $('#card-inspector').innerHTML=inspectorHTML();localize($('#card-inspector'));drawIcons();
+  $('#drop-status').textContent=selected?.index!==undefined?tr(playError(game,game.active,selected.index)):'';
+  for(const button of app.querySelectorAll('[data-hand],[data-unit]')){
+    const on=selected&&(selected.uid?button.dataset.unit===selected.uid:Number(button.dataset.hand)===selected.index&&button.hasAttribute('data-hand'));
+    button.classList.toggle('is-selected',!!on);button.setAttribute('aria-pressed',String(!!on));
+  }
+  for(const zone of app.querySelectorAll('[data-drop]'))zone.classList.toggle('drop-valid',!!selected&&!selectionIntent(zone).error);
+}
+function playFromHand(index,targetId,slot) {
+  const result=playCard(game,game.active,index,targetId,slot);
+  if(!result.ok){toast(result.error);return false;}
+  modal.close();selected=null;sound();
+  if(game.phase==='over')battleDone(false);else {
+    render();
+    const target=targetId?$(`[data-unit="${targetId}"]`):slot!==undefined?$(`.own-formation [data-slot="${slot}"]`):$('.own-formation');
+    target?.classList.add('just-played');
+  }
+  return true;
+}
+function dropSelected(zone) {
+  dragging=false;
+  const intent=selectionIntent(zone);
+  if(intent.error){if(zone)toast(intent.error);selected=null;paintSelection();return;}
+  if(selected.uid){moveUnit(game,game.active,selected.uid,intent.slot);sound();render();}
+  else playFromHand(selected.index,intent.targetId,intent.slot);
+}
+cancelDrag=bindDrag(app,{
+  canStart:button=>screen==='battle'&&game.phase==='plan'&&!handoff&&!modal.open&&(button.hasAttribute('data-hand')||Number(button.dataset.side)===game.active),
+  start:button=>{dragging=true;selectPiece(button);},
+  over:zone=>{
+    for(const current of app.querySelectorAll('.drop-hover'))current.classList.remove('drop-hover');
+    const intent=selectionIntent(zone);if(!intent.error)zone.classList.add('drop-hover');
+    $('#drop-status').textContent=zone?tr(intent.error||(selected.uid?'調整站位':isUnit(selectedCard())?'召喚角色':'發動卡牌')):'';
+  },
+  drop:zone=>{for(const current of app.querySelectorAll('.drop-hover'))current.classList.remove('drop-hover');$('#drop-status').textContent='';dropSelected(zone);},
+  cancel:()=>{dragging=false;selected=null;paintSelection();if($('#drop-status'))$('#drop-status').textContent='';for(const current of app.querySelectorAll('.drop-hover'))current.classList.remove('drop-hover');}
+});
 
 document.addEventListener('click', e => {
   const button = e.target.closest('button');
@@ -268,12 +334,16 @@ document.addEventListener('click', e => {
     stopModalPreview=mountPreview(stage,card);return;
   }
   if (button.dataset.nav) { screen=button.dataset.nav; render(); return; }
-  if (button.dataset.hand!==undefined) return showCard(null,Number(button.dataset.hand));
+  if (button.dataset.hand!==undefined) {if(game.phase==='plan'&&!handoff)selectPiece(button);return;}
+  if (button.hasAttribute('data-drop')) {
+    if(game.phase!=='plan'||handoff)return;
+    if(selected)return dropSelected(button);
+    if(button.dataset.unit){if(Number(button.dataset.side)===game.active)selectPiece(button);else showCard(game.units.find(u=>u.uid===button.dataset.unit)?.id);}
+    return;
+  }
   if (button.dataset.card) return showCard(button.dataset.card);
   if (button.dataset.play!==undefined) {
-    const result = playCard(game,game.active,Number(button.dataset.play),$('#play-target')?.value);
-    if (!result.ok) return toast(result.error);
-    modal.close(); sound(); if(game.phase==='over') battleDone(false); else render(); return;
+    playFromHand(Number(button.dataset.play),$('#play-target')?.value);return;
   }
   if (button.dataset.add) return addToDeck(button.dataset.add);
   if (button.dataset.remove) { const at=profile.deck.indexOf(button.dataset.remove); if(at>=0) profile.deck.splice(at,1); persist(); render(); return; }
@@ -286,6 +356,8 @@ document.addEventListener('click', e => {
     $('#confirm-delete').onclick=()=>{profile.custom=profile.custom.filter(c=>c.id!==id);profile.deck=profile.deck.filter(x=>x!==id);catalog=collect();persist();modal.close();render();};return;
   }
   switch(button.dataset.action) {
+    case 'inspect': {const c=selectedCard();if(c)showCard(c.id,selected?.uid?null:selected?.index??0);break;}
+    case 'cancel-selection': selected=null;paintSelection();break;
     case 'appearance': appearanceDialog();break;
     case 'random-deck': {
       const next=randomWorldDeck(catalog);

@@ -10,9 +10,40 @@ import { ARCHETYPES, classifyMeme } from '../src/semantics.js';
 import { LANGUAGES, setLocale, getLocale, tr } from '../src/i18n.js';
 import { MESSAGES } from '../src/locales.js';
 import { effectText } from '../src/catalog.js';
+import { dropIntent } from '../src/drag.js';
+import { moveUnit } from '../src/game.js';
 
 function setup() { const g=createGame({seed:123}); g.units=[]; g.players.forEach(p=>{p.hand=[];p.energy=9;p.deck=[];p.discard=[];}); return g; }
 const card=id=>CORE.find(c=>c.id===id);
+
+test('drop zones validate type, owner, occupancy and energy before playing; chosen lanes affect physics',()=>{
+  const g=setup();g.players[0].hand=['doge','bonk','suit','reverse','fine','fusion'];
+  const friend=summon(g,card('doge'),0,0),enemy=summon(g,card('harold'),1,0);
+  const own={kind:'unit',side:'0',slot:'2'},foe={kind:'unit',side:'1',slot:'0',uid:enemy.uid};
+  assert.ok(dropIntent(g,0,foe).error);
+  assert.equal(dropIntent(g,0,own).error,'');
+  assert.ok(dropIntent(g,0,{...own,slot:'0'}).error);
+  assert.equal(playCard(g,0,0,undefined,2).ok,true);
+  const deployed=units(g,0).find(u=>u.slot===2);
+  assert.ok(deployed);assert.equal(friend.slot,0);
+  const battle=createBattle(g);assert.equal(battle.bodies.get(deployed.uid).position.y,470*3/4);battle.dispose();
+  assert.equal(moveUnit(g,0,deployed.uid,0),true);assert.equal(friend.slot,2);
+  assert.equal(moveUnit(g,1,enemy.uid,2),false);
+  assert.equal(dropIntent(g,0,foe).targetId,enemy.uid);
+  assert.ok(dropIntent(g,0,{...own,uid:friend.uid}).error);
+  assert.ok(dropIntent(g,1,foe).error);
+  assert.equal(dropIntent(g,1,{...own,slot:'2',uid:friend.uid}).error,'');
+  assert.equal(dropIntent(g,2,{kind:'trap',side:'0'}).error,'');
+  assert.ok(dropIntent(g,2,{kind:'trap',side:'0',occupied:'true'}).error);
+  assert.equal(dropIntent(g,3,{kind:'field',side:'0'}).error,'');
+  assert.ok(dropIntent(g,3,foe).error);
+  assert.equal(dropIntent(g,4,{...own,slot:'2'}).error,'');
+  assert.equal(playCard(g,0,4,undefined,2).ok,true);
+  assert.equal(units(g,0).length,1);assert.equal(units(g,0)[0].slot,2);
+  g.players[0].energy=0;const hand=[...g.players[0].hand];
+  assert.ok(dropIntent(g,0,foe).error);assert.deepEqual(g.players[0].hand,hand);
+  g.phase='battle';assert.equal(moveUnit(g,0,friend.uid,1),false);
+});
 
 test('localization translates rules while preserving canonical data and dynamic card names',()=>{
   const before=JSON.stringify(CATALOG),name='魔法陷阱的角色';
