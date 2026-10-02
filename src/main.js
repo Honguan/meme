@@ -56,6 +56,16 @@ function playerHUD(side) {
   return `<div class="player-hud side-${side}"><span class="player-number">0${side + 1}</span><div class="player-info"><span class="eyebrow">${side && game.mode === 'ai' ? 'CPU / OPPONENT' : 'DUELIST'}</span><b>${p.name}</b><div class="life-track"><span style="width:${p.hp / 20 * 100}%"></span></div></div><div class="life"><b>${p.hp}</b><small>LP</small></div></div>`;
 }
 function logHTML() { return game.log.slice(0, 6).map(l => `<li class="log-${l.kind}"><small>${String(l.round).padStart(2,'0')}</small><span>${esc(l.text)}</span></li>`).join(''); }
+function setProgressHTML() {
+  return Object.entries(TAGS).map(([tag, data]) => {
+    const count = units(game, game.active).filter(u => u.tag === tag).length;
+    return `<span class="synergy ${count >= 2 ? 'on' : ''}" style="--tag:${data.color}" title="${data.set}｜2 件：${data.bonus}｜3 件追加：${data.fullBonus}"><i></i>${data.name}<small>${count}/3</small></span>`;
+  }).join('');
+}
+function setRulesHTML(tag) {
+  const data = TAGS[tag];
+  return `<div class="set-rule"><b>${data.set} · ${data.name}</b><p>2 件：${data.bonus}</p><p>3 件追加：${data.fullBonus}</p></div>`;
+}
 function battleHTML() {
   const p = game.players[game.active], field = FIELDS.find(f => f.id === game.field), tags = combos(game, game.active);
   return `<main class="battle-page"><div class="page-heading"><div><span class="eyebrow accent">THE MEMEVERSE</span><h1>讓迷因，正面對決<span class="period">.</span></h1></div><button class="quiet-button" data-action="new" ${game.phase === 'battle' ? 'disabled' : ''}>${icon('rotate-ccw')} 新對決</button></div>
@@ -66,7 +76,7 @@ function battleHTML() {
     <div class="unit-strip">${[0,1].map(side => `<div class="unit-team side-${side}">${[0,1,2].map(i => { const u = units(game, side)[i]; return u ? `<span class="unit-chip">${image(u)}<b>${esc(u.name)}</b><small>${u.hp} HP</small></span>` : `<span class="unit-empty">${icon('plus')} 角色席位</span>`; }).join('')}</div>`).join('')}</div>
     </section><aside class="battle-aside"><div class="aside-title"><h2>戰局</h2><span class="mono">LIVE FEED</span></div>
       <div class="energy-box"><span>${icon('zap')} 可用能量</span><strong>${game.goal === 'sandbox' ? '∞' : p.energy}<small>${game.goal === 'sandbox' ? 'FREE' : `/ ${Math.min(8, 2 + game.round)}`}</small></strong><div class="energy-pips">${Array.from({length:8},(_,i)=>`<i class="${i < p.energy || game.goal === 'sandbox' ? 'filled' : ''}"></i>`).join('')}</div></div>
-      <div class="synergy-section"><h3>${icon('sparkles')} 陣營連攜 <span>${tags.length}</span></h3><div class="synergies">${Object.entries(TAGS).map(([tag, data]) => {const count = units(game, game.active).filter(u=>u.tag===tag).length;return `<span class="synergy ${count >= 2 ? 'on' : ''}" style="--tag:${data.color}" title="${data.bonus}"><i></i>${data.name}<small>${count}/2</small></span>`;}).join('')}</div></div>
+      <div class="synergy-section"><h3>${icon('sparkles')} 連攜套裝 <span id="set-count">${tags.length}</span></h3><div class="synergies" id="set-progress">${setProgressHTML()}</div><details class="set-guide"><summary>套裝效果 · 2 / 3 件</summary><p>同一方存活的同陣營角色各計 1 件；重複卡也計入。3 件效果與 2 件效果疊加，離場即失去門檻加成；已獲得的資源保留。</p>${Object.keys(TAGS).map(setRulesHTML).join('')}</details></div>
       <div class="trap-section"><h3>${icon('shield')} 陷阱區</h3><div class="trap-slots">${[0,1].map(i => `<span class="${p.traps[i] ? 'armed' : ''}">${icon(p.traps[i] ? 'shield' : 'plus')}${p.traps[i] ? '已設置' : '空席'}</span>`).join('')}</div></div>
       <div class="log-section"><h3>對決紀錄<span id="collision-count">${game.collisions} 次碰撞</span></h3><ol id="battle-log" aria-live="polite" aria-relevant="additions">${logHTML()}</ol></div>
     </aside></div>
@@ -106,6 +116,8 @@ function render() {
 function updateBattleHUD() {
   $('#scoreboard').innerHTML = playerHUD(0) + '<div class="versus">VS</div>' + playerHUD(1);
   $('#battle-log').innerHTML = logHTML(); $('#collision-count').textContent = `${game.collisions} 次碰撞`;
+  $('#set-progress').innerHTML = setProgressHTML();
+  $('#set-count').textContent = combos(game, game.active).length;
 }
 function openDialog(html, className = '') {
   if (modal.open) modal.close();
@@ -118,6 +130,7 @@ function showCard(id, handIndex = null) {
   if (!c) return;
   const error = handIndex !== null ? playError(game, game.active, handIndex) : '';
   openDialog(`<div class="card-detail"><div class="detail-art" style="--tag:${TAGS[c.tag].color}">${image(c)}</div><div class="detail-body"><span class="eyebrow" style="color:${TAGS[c.tag].color}">${TYPES[c.type]} / ${TAGS[c.tag].name}</span><h2>${esc(c.name)}</h2><p class="flavor">${esc(c.flavor)}</p><div class="detail-stats"><span>${icon('zap')} ${c.cost} 能量</span>${isUnit(c)?`<span>${icon('swords')} ${c.attack}</span><span>${icon('heart')} ${c.hp}</span>`:''}</div><div class="effect-detail">${c.type==='fusion'?'<p>消耗兩名同陣營角色；繼承素材陣營及一半總攻擊。</p>':''}<p>${esc(effectText(c))}</p></div>
+    ${isUnit(c)?`<section class="set-detail" aria-label="連攜套裝">${setRulesHTML(c.tag)}<p>${c.type==='fusion'?'融合後改用素材陣營的套裝；兩份素材合為 1 件。':'同一方存活的同陣營角色各計 1 件；3 件效果與 2 件效果疊加。'}</p></section>`:''}
     ${handIndex!==null?`<label class="target-select">優先目標<select id="play-target"><option value="">自動選擇</option>${game.units.filter(u=>u.hp>0).map(u=>`<option value="${u.uid}">${u.side===game.active?'友軍':'敵軍'} · ${esc(u.name)} (${u.hp} HP)</option>`).join('')}</select></label><p class="form-error">${esc(error)}</p><button class="primary-button" data-play="${handIndex}" ${error?'disabled':''}>${icon(c.type==='monster'?'swords':'sparkles')} ${c.type==='monster'?'召喚角色':c.type==='trap'?'設置陷阱':c.type==='fusion'?'融合召喚':'發動卡牌'}</button>`:
     `<button class="primary-button" data-add="${esc(c.id)}">${icon('plus')} 加入卡組</button><button class="quiet-button" data-template="${esc(c.id)}">${icon('hammer')} 以此為範本</button>${c.origin==='自訂'?`<button class="text-button danger" data-delete="${esc(c.id)}">${icon('trash-2')} 刪除自訂卡</button>`:''}`}
     ${c.source?`<a class="source-link" href="${esc(c.source)}" target="_blank" rel="noopener noreferrer">圖片來源：Imgflip ${icon('arrow-up-right')}</a>`:'<span class="source-link">玩家自訂作品</span>'}</div></div>`, 'card-modal');

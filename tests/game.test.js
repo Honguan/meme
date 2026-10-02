@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CATALOG, CORE, validateCustom, templateCards, DEFAULT_DECK } from '../src/catalog.js';
+import { CATALOG, CORE, TAGS, validateCustom, templateCards, DEFAULT_DECK } from '../src/catalog.js';
 import { createGame, playCard, summon, collide, cleanup, finishRound, planAI, checkWinner, combos, draw, units } from '../src/game.js';
 import { createBattle } from '../src/physics.js';
 import { parseProfile, freshProfile } from '../src/storage.js';
@@ -94,4 +94,55 @@ test('export/import round trip preserves custom IDs and deck while rejecting bro
   const roundtrip=parseProfile(JSON.parse(JSON.stringify(profile)));assert.deepEqual(roundtrip.deck,profile.deck);
   assert.equal(roundtrip.custom[0].id,c.id);assert.throws(()=>parseProfile({...profile,deck:['missing']}));
   assert.throws(()=>parseProfile({...profile,custom:[c,c]}));
+});
+
+test('three-piece sets apply all six bonuses and lose their threshold when a member falls',()=>{
+  for(const tag of Object.keys(TAGS)){
+    const g=setup();
+    const base={...card('doge'),tag,attack:2,hp:100,effects:[]};
+    const friends=Array.from({length:3},()=>summon(g,base,0));
+    const enemy=summon(g,{...base,attack:0},1);
+    assert.deepEqual(combos(g,0,3),[tag]);
+    assert.deepEqual(combos(g,1,3),[]);
+    if(tag==='chaos'||tag==='bonk'){
+      collide(g,friends[0],enemy);
+      assert.equal(enemy.hp,tag==='chaos'?95:94);
+      const hp=enemy.hp;collide(g,friends[0],enemy);
+      assert.equal(hp-enemy.hp,tag==='chaos'?5:3);
+    }else{
+      friends.forEach(u=>u.hp=80);g.players[0].deck=Array(9).fill('doge');
+      finishRound(g);
+      if(tag==='wholesome') assert.ok(friends.every(u=>u.hp===85));
+      if(tag==='glitch') assert.ok(friends.every(u=>u.shield===5));
+      if(tag==='brain') assert.equal(g.players[0].hand.length,3);
+      if(tag==='stonks') assert.equal(g.players[0].energy,6);
+    }
+    friends[2].hp=0;cleanup(g);
+    assert.deepEqual(combos(g,0,3),[]);assert.deepEqual(combos(g,0),[tag]);
+    const hp=enemy.hp;friends[0].hitUsed=false;collide(g,friends[0],enemy);
+    assert.equal(hp-enemy.hp,tag==='chaos'||tag==='bonk'?3:2);
+    friends[0].hp=80;friends[0].shield=0;g.players[0].hand=[];g.players[0].deck=Array(9).fill('doge');
+    finishRound(g);
+    if(tag==='wholesome') assert.equal(friends[0].hp,82);
+    if(tag==='glitch') assert.equal(friends[0].shield,2);
+    if(tag==='brain') assert.equal(g.players[0].hand.length,2);
+    if(tag==='stonks') assert.equal(g.players[0].energy,2+g.round+1);
+  }
+});
+
+test('full sets activate for imported/custom units, reset first-hit bonuses, and break on fusion',()=>{
+  const g=setup(),custom=validateCustom({...card('doge'),effects:[],attack:2,hp:100});
+  const a=summon(g,custom,0);summon(g,custom,0);
+  g.cards[custom.id]=custom;g.players[0].hand=[custom.id];
+  assert.equal(playCard(g,0,0).ok,true);
+  assert.ok(g.log.some(l=>l.text.includes('全員 BONK 3 件套啟動')));
+  const enemy=summon(g,{...custom,attack:0},1);
+  collide(g,a,enemy);finishRound(g);
+  const hp=enemy.hp;collide(g,a,enemy);assert.equal(hp-enemy.hp,6);
+  g.players[0].hand=['fusion'];g.players[0].energy=9;
+  assert.equal(playCard(g,0,0).ok,true);
+  assert.deepEqual(combos(g,0,3),[]);assert.deepEqual(combos(g,0),['bonk']);
+  const web=CATALOG.find(c=>c.origin==='網路');
+  const imported=setup();Array.from({length:3},()=>summon(imported,web,0));
+  assert.deepEqual(combos(imported,0,3),[web.tag]);
 });

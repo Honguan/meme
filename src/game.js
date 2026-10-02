@@ -11,10 +11,10 @@ const shuffle = (cards, rng) => {
 };
 export function note(g, text, kind = 'normal') { g.log.unshift({ text, kind, round: g.round }); g.log.length = Math.min(g.log.length, 50); }
 export function units(g, side) { return g.units.filter(u => u.side === side && u.hp > 0); }
-export function combos(g, side) {
+export function combos(g, side, required = 2) {
   const count = {};
   for (const u of units(g, side)) count[u.tag] = (count[u.tag] || 0) + 1;
-  return Object.keys(count).filter(tag => count[tag] >= 2);
+  return Object.keys(count).filter(tag => count[tag] >= required);
 }
 export function summon(g, card, side) {
   const unit = { ...structuredClone(card), uid: `u${g.nextId++}`, side, maxHp: card.hp, shield: 0, dead: false, hitUsed: false };
@@ -110,6 +110,7 @@ export function playCard(g, side, index, targetId) {
   if (error) return { ok: false, error };
   const p = g.players[side], card = g.cards[p.hand[index]];
   const before = combos(g, side);
+  const fullBefore = combos(g, side, 3);
   p.hand.splice(index, 1);
   if (g.goal !== 'sandbox') p.energy -= card.cost;
   let source;
@@ -128,6 +129,7 @@ export function playCard(g, side, index, targetId) {
   note(g, `${p.name} ${card.type === 'trap' ? '設置陷阱' : `打出 ${card.name}`}`, card.type === 'fusion' ? 'combo' : 'normal');
   cleanup(g);
   for (const tag of combos(g, side).filter(t => !before.includes(t))) note(g, `${TAGS[tag].name}連攜啟動：${TAGS[tag].bonus}`, 'combo');
+  for (const tag of combos(g, side, 3).filter(t => !fullBefore.includes(t))) note(g, `${TAGS[tag].set} 3 件套啟動：${TAGS[tag].fullBonus}`, 'combo');
   checkWinner(g);
   return { ok: true };
 }
@@ -142,10 +144,16 @@ export function collide(g, a, b) {
       p.discard.push(id);
       note(g, `陷阱連鎖：${card.name}`, 'combo');
     }
-    if (!u.hitUsed) { u.hitUsed = true; effects(g, u, u.side, 'hit', u, enemy.uid); }
+    if (!u.hitUsed) {
+      u.hitUsed = true; effects(g, u, u.side, 'hit', u, enemy.uid);
+      if (u.hp > 0 && combos(g, u.side, 3).includes('bonk')) {
+        damage(g, enemy, 3);
+        note(g, `${TAGS.bonk.set}：${u.name} 追加 3 傷害`, 'combo');
+      }
+    }
   }
   if (a.hp > 0 && b.hp > 0) {
-    const power = u => u.attack + combos(g, u.side).filter(t => t === 'bonk' || t === 'chaos').length;
+    const power = u => u.attack + combos(g, u.side).filter(t => t === 'bonk' || t === 'chaos').length + (combos(g, u.side, 3).includes('chaos') ? 2 : 0);
     const pa = power(a), pb = power(b);
     damage(g, a, pb); damage(g, b, pa);
   }
@@ -180,14 +188,14 @@ export function finishRound(g) {
   g.phase = 'plan'; g.active = 0;
   g.units = g.units.filter(u => !u.dead);
   for (let side = 0; side < 2; side++) {
-    const p = g.players[side], active = combos(g, side);
+    const p = g.players[side], active = combos(g, side), full = combos(g, side, 3);
     p.ready = false;
-    p.energy = Math.min(8, 2 + g.round) + (active.includes('stonks') ? 1 : 0);
-    draw(g, side, active.includes('brain') ? 2 : 1);
+    p.energy = Math.min(8, 2 + g.round) + Number(active.includes('stonks')) + Number(full.includes('stonks'));
+    draw(g, side, 1 + Number(active.includes('brain')) + Number(full.includes('brain')));
     for (const u of units(g, side)) {
       u.hitUsed = false;
-      if (active.includes('wholesome')) u.hp = Math.min(u.maxHp, u.hp + 2);
-      if (active.includes('glitch')) u.shield += 2;
+      if (active.includes('wholesome')) u.hp = Math.min(u.maxHp, u.hp + 2 + (full.includes('wholesome') ? 3 : 0));
+      if (active.includes('glitch')) u.shield = Math.min(999, u.shield + 2 + (full.includes('glitch') ? 3 : 0));
       if (g.field === 'backrooms') u.shield++;
       if (g.field === 'xp') u.hp = Math.min(u.maxHp, u.hp + 2);
       effects(g, u, side, 'round', u);

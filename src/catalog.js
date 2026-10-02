@@ -2,12 +2,12 @@ import snapshot from './data/memes.json' with { type: 'json' };
 
 export const TYPES = { monster: '角色', spell: '魔法', trap: '陷阱', equip: '裝備', field: '場地', fusion: '融合' };
 export const TAGS = {
-  chaos: { name: '混沌', color: '#fb8aac', bonus: '碰撞傷害 +1' },
-  wholesome: { name: '療癒', color: '#76dec5', bonus: '每輪全隊回復 2' },
-  brain: { name: '腦洞', color: '#d4f75b', bonus: '每輪多抽 1 張' },
-  stonks: { name: '財富', color: '#ffd278', bonus: '每輪能量 +1' },
-  bonk: { name: '暴擊', color: '#8fc9f9', bonus: '全隊攻擊 +1' },
-  glitch: { name: '錯亂', color: '#c3aaff', bonus: '每輪護盾 +2' },
+  chaos: { name: '混沌', color: '#fb8aac', bonus: '碰撞傷害 +1', set: '一切都很好', fullBonus: '碰撞傷害再 +2' },
+  wholesome: { name: '療癒', color: '#76dec5', bonus: '每輪全隊回復 2', set: '笑著撐下去', fullBonus: '每輪全隊再回復 3' },
+  brain: { name: '腦洞', color: '#d4f75b', bonus: '每輪多抽 1 張', set: '宇宙大腦', fullBonus: '每輪再多抽 1 張（手牌上限 9）' },
+  stonks: { name: '財富', color: '#ffd278', bonus: '每輪能量 +1', set: '一起上月球', fullBonus: '每輪能量再 +1' },
+  bonk: { name: '暴擊', color: '#8fc9f9', bonus: '全隊碰撞傷害 +1', set: '全員 BONK', fullBonus: '每名角色每輪首次碰撞，對碰撞目標額外造成 3 傷害' },
+  glitch: { name: '錯亂', color: '#c3aaff', bonus: '每輪護盾 +2', set: '現實出錯了', fullBonus: '每輪全隊護盾再 +3' },
 };
 export const FIELDS = [
   { id: 'grid', name: '網路競技場', subtitle: 'THE ORIGINAL', description: '標準碰撞規則。', color: '#d4f75b', image: 'https://i.imgflip.com/28j0te.jpg' },

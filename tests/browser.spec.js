@@ -18,6 +18,8 @@ test('collection, custom multi-effect card, saved deck and reload',async({page})
   await page.goto('/');await page.getByRole('button',{name:'卡牌圖鑑'}).click();
   await page.getByRole('searchbox',{name:'搜尋卡牌'}).fill('Doge');
   await page.locator('.catalog-grid .meme-card').first().click();
+  await expect(page.getByRole('region',{name:'連攜套裝'})).toContainText('全員 BONK');
+  await expect(page.getByRole('region',{name:'連攜套裝'})).toContainText('3 件追加');
   await page.getByRole('button',{name:'加入卡組'}).click();
   await expect(page.locator('.deck-count')).toContainText('21');
   await page.getByRole('button',{name:'卡組工坊'}).click();
@@ -54,6 +56,10 @@ test('local two-player handoff conceals the next hand until accepted',async({pag
 test('mobile layouts, card action and field selection remain within viewport',async({page})=>{
   await page.setViewportSize({width:390,height:844});await page.goto('/');
   await expect(page.locator('canvas')).toBeVisible();
+  await expect(page.locator('#set-progress .synergy')).toHaveCount(6);
+  await page.locator('.set-guide summary').click();
+  await expect(page.locator('.set-guide')).toContainText('一起上月球');
+  await expect(page.locator('.set-guide .set-rule')).toHaveCount(6);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
   await page.screenshot({path:'.artifacts/mobile.png',fullPage:true});
   await page.locator('.hand-cards .meme-card').first().click();
