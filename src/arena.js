@@ -1,6 +1,7 @@
 import { TAGS } from './catalog.js';
 import { units } from './game.js';
 import { createBattle, WIDTH, HEIGHT } from './physics.js';
+import { tr } from './i18n.js';
 
 const images = new Map();
 function imageFor(url) {
@@ -39,7 +40,7 @@ export class Arena {
       this.impacts = this.impacts.slice(-60);
       this.hitStopUntil = this.reduced ? 0 : at + 65;
       this.shakeUntil = this.reduced ? 0 : at + 180;
-      this.canvas.setAttribute('aria-label', `迷因對決：${report.changes.map(v => `${v.name}${v.ko ? ' 擊倒' : ''}${v.hp ? ` HP ${v.hp > 0 ? '+' : ''}${v.hp}` : ''}${v.shield ? ` 護盾 ${v.shield > 0 ? '+' : ''}${v.shield}` : ''}`).join('；')}`);
+      this.canvas.setAttribute('aria-label', `${tr('迷因對決：')}${report.changes.map(v => `${v.name}${v.ko ? ` ${tr('擊倒')}` : ''}${v.hp ? ` HP ${v.hp > 0 ? '+' : ''}${v.hp}` : ''}${v.shield ? ` ${tr('護盾')} ${v.shield > 0 ? '+' : ''}${v.shield}` : ''}`).join('；')}`);
       this.onUpdate?.(a, b);
   }
   animate(now) {
@@ -147,7 +148,7 @@ export class Arena {
       const age = Math.max(0, (now - p.at) / 850), rise = this.reduced ? 0 : age * 12;
       c.save(); c.globalAlpha = this.reduced ? 1 : Math.min(1, (1 - age) * 3);
       if (p.kind === 'trap') {
-        this.caption(`陷阱連鎖：${p.text}`, WIDTH / 2, 70, '#c3aaff', 26);
+        this.caption(tr('陷阱連鎖：{card}',{card:p.text}), WIDTH / 2, 70, '#c3aaff', 26);
       } else if (p.kind === 'hit') {
         if (!this.reduced) {
           const radius = 22 + age * 125;
@@ -170,7 +171,7 @@ export class Arena {
         if (p.shield) {
           c.strokeStyle = '#8bdcff'; c.lineWidth = 5;
           c.beginPath(); c.arc(p.x, p.y, 61 + (this.reduced ? 0 : age * 16), -.8, Math.PI * 1.7); c.stroke();
-          this.caption(`護盾 ${p.shield > 0 ? '+' : ''}${p.shield}`, x, y - 28 - rise, '#8bdcff', 22);
+          this.caption(`${tr('護盾')} ${p.shield > 0 ? '+' : ''}${p.shield}`, x, y - 28 - rise, '#8bdcff', 22);
         }
         if (p.ko) {
           this.caption('K.O.', x, y + 3 - rise, '#ffd278', 30);

@@ -2,6 +2,7 @@ import snapshot from './data/memes.json' with { type: 'json' };
 import world from './data/world-memes.json' with { type: 'json' };
 import { LEGACY_ARCHETYPES } from './data/legacy-archetypes.js';
 import { ARCHETYPES, classifyMeme, semanticCard } from './semantics.js';
+import { tr } from './i18n.js';
 export const WORLD_COVERAGE = { ...world.coverage, count: world.cards.length, collectedAt: world.collectedAt };
 
 export const TYPES = { monster: '角色', spell: '魔法', trap: '陷阱', equip: '裝備', field: '場地', fusion: '融合' };
@@ -78,8 +79,8 @@ export function safeImage(value) {
   try { return new URL(value).protocol === 'https:'; } catch { return false; }
 }
 export function effectText(card) {
-  if (card.type === 'field') return FIELDS.find(f => f.id === card.field)?.description ?? '';
-  return card.effects.map(e => `${TRIGGERS[e.trigger]}：${TARGETS[e.target]}${ACTIONS[e.action]} ${e.amount}`).join('；');
+  if (card.type === 'field') return tr(FIELDS.find(f => f.id === card.field)?.description ?? '');
+  return card.effects.map(e => tr('{trigger}：{target}{action} {amount}',{trigger:tr(TRIGGERS[e.trigger]),target:tr(TARGETS[e.target]),action:tr(ACTIONS[e.action]),amount:e.amount})).join('；');
 }
 export function validateCustom(input) {
   if (!input || typeof input !== 'object' || !Object.hasOwn(TYPES, input.type) || !Object.hasOwn(TAGS, input.tag)) throw new Error('卡牌類型或陣營無效');

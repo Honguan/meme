@@ -1,17 +1,18 @@
 import { CORE, DEFAULT_DECK } from './catalog.js';
 import { createGame, summon, playCard, finishRound, damage, cleanup } from './game.js';
 import { Arena } from './arena.js';
+import { tr } from './i18n.js';
 
 export function previewGame(card) {
   const catalog = [...CORE.filter(c => c.id !== card.id), card];
   const game = createGame({ catalog, deck: DEFAULT_DECK, goal: 'sandbox', seed: 7 });
   game.units = [];
   for (const p of game.players) { p.hand = []; p.traps = []; }
-  const support = { ...CORE.find(c => c.id === 'harold'), tag: card.tag, effects: [], attack: 1, hp: 30, name: '演示友軍' };
+  const support = { ...CORE.find(c => c.id === 'harold'), tag: card.tag, effects: [], attack: 1, hp: 30, name: tr('演示友軍') };
   const friend = summon(game, support, 0); friend.hp = 15;
   if (card.type === 'fusion') summon(game, support, 0);
-  summon(game, { ...support, attack: 5, hp: 35, name: '演示敵軍' }, 1);
-  summon(game, { ...support, attack: 3, hp: 35, name: '演示敵軍 2' }, 1);
+  summon(game, { ...support, attack: 5, hp: 35, name: tr('演示敵軍') }, 1);
+  summon(game, { ...support, attack: 3, hp: 35, name: tr('演示敵軍 2') }, 1);
   game.players[0].hand = [card.id];
   return game;
 }
@@ -21,7 +22,7 @@ export function mountPreview(container, card) {
   let arena, disposed = false;
   const timers = new Set();
   const later = (fn, ms) => { const id = setTimeout(() => { timers.delete(id); if (!disposed) fn(); }, ms); timers.add(id); };
-  const show = label => { status.textContent = `${label} · 能量 ${game.players[0].energy} · 手牌 ${game.players[0].hand.length}`; };
+  const show = label => { status.textContent = `${tr(label)} · ${tr('能量')} ${game.players[0].energy} · ${tr('手牌')} ${game.players[0].hand.length}`; };
   const resolve = (action, label) => {
     const before = new Map(game.units.map(u => [u.uid, { hp:u.hp, shield:u.shield, dead:u.dead }]));
     action();

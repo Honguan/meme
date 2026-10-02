@@ -7,9 +7,31 @@ import { createBattle } from '../src/physics.js';
 import { parseProfile, freshProfile } from '../src/storage.js';
 import world from '../src/data/world-memes.json' with { type: 'json' };
 import { ARCHETYPES, classifyMeme } from '../src/semantics.js';
+import { LANGUAGES, setLocale, getLocale, tr } from '../src/i18n.js';
+import { MESSAGES } from '../src/locales.js';
+import { effectText } from '../src/catalog.js';
 
 function setup() { const g=createGame({seed:123}); g.units=[]; g.players.forEach(p=>{p.hand=[];p.energy=9;p.deck=[];p.discard=[];}); return g; }
 const card=id=>CORE.find(c=>c.id===id);
+
+test('localization translates rules while preserving canonical data and dynamic card names',()=>{
+  const before=JSON.stringify(CATALOG),name='魔法陷阱的角色';
+  try {
+    for(const locale of Object.keys(LANGUAGES)) {
+      setLocale(locale);assert.equal(getLocale(),locale);
+      assert.ok(effectText(card('doge')).length);
+      if(locale==='zh-Hant')continue;
+      for(const [key,value] of Object.entries(MESSAGES))assert.equal(tr(key),value[locale]);
+      assert.ok(tr(`玩家 01 打出 ${name}`).includes(name));
+      assert.ok(tr(`${name} 被擊倒`).includes(name));
+      assert.ok(tr(`友軍 · ${name} (12 HP)`).includes(name));
+      assert.equal(tr(`${name} + ${name} → ${name}`),`${name} + ${name} → ${name}`);
+      if(locale!=='ja')assert.doesNotMatch(effectText(card('doge')),/\p{Script=Han}/u);
+      assert.equal(setLocale('__proto__'),false);assert.equal(getLocale(),locale);
+    }
+    assert.equal(JSON.stringify(CATALOG),before);
+  } finally { setLocale('zh-Hant'); }
+});
 
 test('catalog includes 100 actual web templates and all six card types',()=>{
   assert.equal(CATALOG.filter(c=>c.origin==='網路').length,100);

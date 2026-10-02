@@ -1,5 +1,60 @@
 import { test, expect } from '@playwright/test';
 
+test('language changes preserve the duel, localize each view and persist on mobile',async({page})=>{
+  test.setTimeout(60000);
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto('/');
+  const names=await page.locator('.hand-cards .card-name').allTextContents();
+  const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  const untranslated=()=>page.locator('#app').evaluate(root=>{
+    const results=[],walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+    for(let node=walker.nextNode();node;node=walker.nextNode())if(/\p{Script=Han}/u.test(node.nodeValue)&&!node.parentElement.closest('[data-original],.card-name,.unit-chip b,.deck-row>span>b,.art-fallback,#language-filter option:not([value="all"]):not([value="unknown"])'))results.push(node.nodeValue.trim());
+    return [...new Set(results)];
+  });
+  for(const [locale,button] of [['en','Start clash'],['ja','衝突開始'],['es','Iniciar choque']]) {
+    await page.locator('[data-action="appearance"]').click();
+    await page.locator('#interface-language').selectOption(locale);
+    await expect(page.locator('html')).toHaveAttribute('lang',locale);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('button',{name:button,exact:true})).toBeVisible();
+    expect(await page.locator('.hand-cards .card-name').allTextContents()).toEqual(names);
+    await expect(page.locator('#round-number')).toHaveText('01');
+    if(locale!=='ja')expect(await untranslated()).toEqual([]);
+    await page.setViewportSize({width:390,height:844});
+    for(const screen of ['collection','workshop','battle']) {
+      await page.locator(`[data-nav="${screen}"]`).click();
+      if(locale!=='ja')expect(await untranslated()).toEqual([]);
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+    }
+    await page.screenshot({path:`.artifacts/language-${locale}-mobile.png`,fullPage:true});
+  }
+  await page.getByRole('button',{name:'Iniciar choque',exact:true}).click();
+  await expect(page.locator('#round-number')).toHaveText('02',{timeout:15000});
+  await expect(page.locator('#battle-log')).toContainText('Ronda 2');
+  await page.reload();await expect(page.locator('html')).toHaveAttribute('lang','es');
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+  expect(errors).toEqual([]);
+});
+
+test('translated workshop and previews preserve user-authored card text',async({page})=>{
+  await page.goto('/');await page.locator('[data-action="appearance"]').click();
+  await page.locator('#interface-language').selectOption('en');await page.keyboard.press('Escape');
+  await page.getByRole('button',{name:'Deck workshop',exact:true}).click();
+  await page.getByLabel('Card name',{exact:true}).fill('魔法陷阱的角色');
+  await page.getByLabel('Flavor text',{exact:true}).fill('角色的魔法效果，沒有翻譯');
+  await page.getByRole('button',{name:'Create card',exact:true}).click();
+  await expect(page.locator('#toast')).toContainText('魔法陷阱的角色');
+  await page.locator('.catalog-grid .meme-card').click();
+  await expect(page.locator('.detail-body h2')).toHaveText('魔法陷阱的角色');
+  await expect(page.locator('.flavor')).toHaveText('角色的魔法效果，沒有翻譯');
+  await page.getByRole('button',{name:'Play effect preview',exact:true}).click();
+  await expect(page.locator('#modal-preview-stage [data-preview-status]')).toContainText('Collision',{timeout:8000});
+  await page.screenshot({path:'.artifacts/language-en-preview.png',fullPage:true});
+  await page.keyboard.press('Escape');await page.reload();
+  await page.getByRole('button',{name:'Card library',exact:true}).click();
+  await page.getByRole('searchbox',{name:'Search cards'}).fill('魔法陷阱的角色');
+  await expect(page.locator('.catalog-grid .meme-card')).toHaveCount(1);
+});
+
 test('real desktop match animates and finishes a round without console errors',async({page})=>{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto('/');
   await expect(page.getByRole('heading',{name:'讓迷因，正面對決.'})).toBeVisible();
@@ -63,14 +118,14 @@ test('random global decks require confirmation and daily challenge leaves the sa
 
 test('palette swatches change the interface and survive reload without changing the deck',async({page})=>{
   await page.goto('/');const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
-  await page.getByRole('button',{name:'色系設定'}).click();
+  await page.getByRole('button',{name:'語言與色系'}).click();
   await page.getByRole('radio',{name:'珊瑚熱浪'}).check();
   await expect(page.locator('html')).toHaveAttribute('data-theme','coral');
   expect(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--accent').trim())).toBe('#ffac91');
   await page.getByRole('button',{name:'關閉',exact:true}).click();await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme','coral');
   expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
-  await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'色系設定'}).click();
+  await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'語言與色系'}).click();
   await page.getByRole('radio',{name:'冰河藍綠'}).check();
   await expect(page.locator('html')).toHaveAttribute('data-theme','ice');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();

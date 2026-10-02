@@ -5,6 +5,7 @@ import { createGame, createDailyGame, randomWorldDeck, playCard, playError, unit
 import { Arena } from './arena.js';
 import { mountPreview } from './preview.js';
 import { THEMES, loadTheme, applyTheme } from './preferences.js';
+import { LANGUAGES, getLocale, setLocale, tr, localize } from './i18n.js';
 import { loadProfile, saveProfile, parseProfile } from './storage.js';
 import './style.css';
 
@@ -26,13 +27,13 @@ hoverPreview.className = 'hover-preview'; hoverPreview.hidden = true; hoverPrevi
 hoverPreview.setAttribute('role','tooltip'); document.body.append(hoverPreview);
 let sourceLanguage = 'all', sourceCountry = 'all', ability = 'all';
 const languageNames = { ara:'العربية', ben:'বাংলা', deu:'Deutsch', eng:'English', fra:'Français', hin:'हिन्दी', jpn:'日本語', kor:'한국어', por:'Português', rus:'Русский', spa:'Español', tam:'தமிழ்', urd:'اردو', vie:'Tiếng Việt', zho:'中文' };
-const regionNames = new Intl.DisplayNames(['zh-Hant'], { type: 'region' });
+let regionNames = new Intl.DisplayNames([getLocale()], { type: 'region' });
 const app = $('#app'), modal = $('#modal');
 
 function collect() { return [...new Map([...CATALOG, ...templateCards(profile.web), ...profile.custom].map(c => [c.id, c])).values()]; }
 function validDeck() { return profile.deck.length >= 10 && profile.deck.some(id => catalog.find(c => c.id === id)?.type === 'monster') ? profile.deck : PRESETS.starter.deck; }
 function persist() { try { saveProfile(profile); return true; } catch { toast('瀏覽器儲存空間不足，請匯出卡組備份'); return false; } }
-function toast(message) { clearTimeout(toastTimer); $('#toast').textContent = message; $('#toast').classList.add('show'); toastTimer = setTimeout(() => $('#toast').classList.remove('show'), 4200); }
+function toast(message) { clearTimeout(toastTimer); $('#toast').textContent = tr(message); $('#toast').classList.add('show'); toastTimer = setTimeout(() => $('#toast').classList.remove('show'), 4200); }
 function sound(kind = 'click') {
   if (mute) return;
   try {
@@ -48,7 +49,7 @@ function sound(kind = 'click') {
 function image(card, extra = '') { return card.image ? `<img src="${esc(card.image)}" alt="${esc(card.name)}" loading="lazy" referrerpolicy="no-referrer" ${extra}>` : `<span class="art-fallback">${esc(card.name.slice(0, 2))}</span>`; }
 function cardHTML(card, index = null) {
   const inHand = index !== null, num = profile.deck.filter(id => id === card.id).length;
-  return `<button class="meme-card type-${card.type}" style="--tag:${TAGS[card.tag].color}" data-${inHand ? 'hand' : 'card'}="${inHand ? index : esc(card.id)}" aria-label="${esc(card.name)}，${TYPES[card.type]}，${card.cost} 能量">
+  return `<button class="meme-card type-${card.type}" style="--tag:${TAGS[card.tag].color}" data-${inHand ? 'hand' : 'card'}="${inHand ? index : esc(card.id)}" aria-label="${esc(card.name)}，${tr(TYPES[card.type])}，${card.cost} ${tr('能量')}">
     <span class="card-top"><b class="cost">${card.cost}</b><span>${TYPES[card.type]}</span><span class="card-rarity">${card.type === 'fusion' ? 'EX' : card.origin === '自訂' ? 'MY' : 'MC'}</span></span>
     <span class="card-art">${image(card)}<span class="tag-pill">${TAGS[card.tag].name}</span></span>
     <span class="card-name">${esc(card.name)}</span>
@@ -59,14 +60,14 @@ function cardHTML(card, index = null) {
 function header() {
   return `<header class="topbar"><a href="#battle" class="brand" aria-label="MEME CLASH 首頁"><span class="brand-mark">${icon('swords')}</span><span>MEME<span class="brand-light">CLASH</span><small>迷因亂鬥</small></span></a>
     <nav aria-label="主要導覽">${[['battle','swords','對決'],['collection','layers','卡牌圖鑑'],['workshop','hammer','卡組工坊']].map(([id, glyph, text]) => `<button class="nav-item ${screen === id ? 'active' : ''}" data-nav="${id}" ${game.phase === 'battle' ? 'disabled' : ''} ${screen === id ? 'aria-current="page"' : ''}>${icon(glyph)}<span>${text}</span></button>`).join('')}</nav>
-    <div class="header-end"><span class="edition">OPEN PLAY <b>01</b></span><button class="icon-button" data-action="appearance" title="色系設定" aria-label="色系設定" ${game.phase==='battle'?'disabled':''}>${icon('palette')}</button><a class="icon-button" href="https://github.com/Honguan/meme" target="_blank" rel="noopener noreferrer" title="GitHub 開源程式碼" aria-label="GitHub 開源程式碼">${icon('github')}</a><button class="icon-button" data-action="sound" aria-label="${mute ? '開啟音效' : '關閉音效'}" title="${mute ? '開啟音效' : '關閉音效'}" aria-pressed="${!mute}">${icon(mute ? 'volume-x' : 'volume-2')}</button></div>
+    <div class="header-end"><span class="edition">OPEN PLAY <b>01</b></span><button class="icon-button" data-action="appearance" title="語言與色系" aria-label="語言與色系" ${game.phase==='battle'?'disabled':''}>${icon('palette')}</button><a class="icon-button" href="https://github.com/Honguan/meme" target="_blank" rel="noopener noreferrer" title="GitHub 開源程式碼" aria-label="GitHub 開源程式碼">${icon('github')}</a><button class="icon-button" data-action="sound" aria-label="${mute ? '開啟音效' : '關閉音效'}" title="${mute ? '開啟音效' : '關閉音效'}" aria-pressed="${!mute}">${icon(mute ? 'volume-x' : 'volume-2')}</button></div>
   </header>`;
 }
 function playerHUD(side) {
   const p = game.players[side];
   return `<div class="player-hud side-${side}"><span class="player-number">0${side + 1}</span><div class="player-info"><span class="eyebrow">${side && game.mode === 'ai' ? 'CPU / OPPONENT' : 'DUELIST'}</span><b>${p.name}</b><div class="life-track"><span style="width:${p.hp / 20 * 100}%"></span></div></div><div class="life"><b>${p.hp}</b><small>LP</small></div></div>`;
 }
-function logHTML() { return game.log.slice(0, 6).map(l => `<li class="log-${l.kind}"><small>${String(l.round).padStart(2,'0')}</small><span>${esc(l.text)}</span></li>`).join(''); }
+function logHTML() { return game.log.slice(0, 6).map(l => `<li class="log-${l.kind}"><small>${String(l.round).padStart(2,'0')}</small><span data-original>${esc(tr(l.text))}</span></li>`).join(''); }
 function setProgressHTML() {
   return Object.entries(TAGS).map(([tag, data]) => {
     const count = units(game, game.active).filter(u => u.tag === tag).length;
@@ -96,7 +97,7 @@ function battleHTML() {
     <footer class="battle-footer"><span>MEME CLASH <b>自由開打。認真亂鬥。</b></span><span>${catalog.length} CARDS <i>/</i> ${FIELDS.length} ARENAS <i>/</i> ${profile.stats.wins} WINS</span></footer></main>`;
 }
 function collectionHTML() {
-  const filtered = catalog.filter(c => (filter === 'all' || c.type === filter) && (origin === 'all' || c.origin === origin) && (sourceLanguage === 'all' || (sourceLanguage === 'unknown' ? !c.languages?.length : c.languages?.includes(sourceLanguage))) && (sourceCountry === 'all' || c.countries?.includes(sourceCountry)) && (ability === 'all' || c.archetype === ability) && `${c.name} ${TAGS[c.tag].name} ${TAGS[c.tag].set} ${c.flavor} ${ARCHETYPES[c.archetype]?.name || ''} ${effectText(c)}`.toLowerCase().includes(query.toLowerCase()));
+  const filtered = catalog.filter(c => (filter === 'all' || c.type === filter) && (origin === 'all' || c.origin === origin) && (sourceLanguage === 'all' || (sourceLanguage === 'unknown' ? !c.languages?.length : c.languages?.includes(sourceLanguage))) && (sourceCountry === 'all' || c.countries?.includes(sourceCountry)) && (ability === 'all' || c.archetype === ability) && `${c.name} ${TAGS[c.tag].name} ${TAGS[c.tag].set} ${c.flavor} ${ARCHETYPES[c.archetype]?.name || ''} ${tr(TAGS[c.tag].name)} ${tr(TAGS[c.tag].set)} ${tr(ARCHETYPES[c.archetype]?.name || '')} ${effectText(c)}`.toLowerCase().includes(query.toLowerCase()));
   return `<main class="collection-page"><div class="page-heading"><div><span class="eyebrow accent">THE COLLECTION</span><h1>整個網路，都是你的牌庫<span class="period">.</span></h1></div><button class="quiet-button" data-action="refresh">${icon('refresh-cw')} 更新網路卡庫</button></div>
     <div class="collection-toolbar"><label class="search-box">${icon('search')}<input id="search" type="search" placeholder="搜尋迷因、陣營或效果" aria-label="搜尋卡牌" value="${esc(query)}"></label><div class="filter-tabs" role="group" aria-label="卡牌類型">${[['all','全部'],...Object.entries(TYPES)].map(([id,label])=>`<button data-filter="${id}" class="${filter===id?'active':''}" aria-pressed="${filter===id}">${label}</button>`).join('')}</div><select id="origin-filter" aria-label="卡牌來源">${['all','精選','網路','全球','自訂'].map(o=>`<option value="${o}" ${origin===o?'selected':''}>${o==='all'?'所有來源':o}</option>`).join('')}</select></div>
     <div class="world-filters"><span>${WORLD_COVERAGE.count.toLocaleString()} 全球模板 · ${Object.keys(WORLD_COVERAGE.languages).length} 種來源語言 · ${Object.keys(WORLD_COVERAGE.countries).length} 個來源地區</span><label>來源語言<select id="language-filter"><option value="all">所有語言</option>${Object.keys(WORLD_COVERAGE.languages).map(code=>`<option value="${code}" ${sourceLanguage===code?'selected':''}>${languageNames[code] || code}</option>`).join('')}<option value="unknown" ${sourceLanguage==='unknown'?'selected':''}>未標註</option></select></label><label>來源地區<select id="country-filter"><option value="all">所有地區</option>${Object.keys(WORLD_COVERAGE.countries).map(code=>`<option value="${code}" ${sourceCountry===code?'selected':''}>${regionNames.of(code)}</option>`).join('')}</select></label><label>梗意能力<select id="ability-filter"><option value="all">所有能力</option>${Object.entries(ARCHETYPES).map(([id,a])=>`<option value="${id}" ${ability===id?'selected':''}>${a.name}</option>`).join('')}</select></label></div>
@@ -126,33 +127,35 @@ function render() {
   drawIcons();
   if (screen === 'battle') arena = new Arena($('#arena'), game, battleDone, () => { sound('hit'); updateBattleHUD(); });
   if (screen === 'workshop') syncTriggers();
+  localize(app);
 }
 function updateBattleHUD() {
   $('#scoreboard').innerHTML = playerHUD(0) + '<div class="versus">VS</div>' + playerHUD(1);
-  $('#battle-log').innerHTML = logHTML(); $('#collision-count').textContent = `${game.collisions} 次碰撞`;
+  $('#battle-log').innerHTML = logHTML(); $('#collision-count').textContent = tr(`${game.collisions} 次碰撞`);
   $('#set-progress').innerHTML = setProgressHTML();
   $('#set-count').textContent = combos(game, game.active).length;
+  localize($('#scoreboard'));localize($('#battle-log'));localize($('#set-progress'));
 }
 function openDialog(html, className = '') {
   hideHoverPreview();stopModalPreview?.();stopModalPreview=null;
   if (modal.open) modal.close();
   modal.className = className;
   modal.innerHTML = `<button class="icon-button close-dialog" data-action="close" aria-label="關閉" title="關閉">${icon('x')}</button>${html}`;
-  modal.showModal(); drawIcons();
+  localize(modal);modal.showModal(); drawIcons();
 }
 function appearanceDialog() {
-  openDialog(`<div class="dialog-heading"><h2>色系設定</h2></div><fieldset class="theme-picker"><legend>配色</legend>${Object.entries(THEMES).map(([id,theme])=>`<label><input type="radio" name="theme" value="${id}" ${document.documentElement.dataset.theme===id?'checked':''}><span class="theme-swatch" style="--swatch:${theme.accent};--rival:${theme.rival}"></span><b>${theme.name}</b></label>`).join('')}</fieldset>`,'small-modal');
+  openDialog(`<div class="dialog-heading"><h2>語言與色系</h2></div><label class="language-choice">介面語言<select id="interface-language">${Object.entries(LANGUAGES).map(([id,name])=>`<option value="${id}" ${getLocale()===id?'selected':''}>${name}</option>`).join('')}</select></label><fieldset class="theme-picker"><legend>配色</legend>${Object.entries(THEMES).map(([id,theme])=>`<label><input type="radio" name="theme" value="${id}" ${document.documentElement.dataset.theme===id?'checked':''}><span class="theme-swatch" style="--swatch:${theme.accent};--rival:${theme.rival}"></span><b>${theme.name}</b></label>`).join('')}</fieldset>`,'small-modal');
 }
 function showCard(id, handIndex = null) {
   const c = handIndex === null ? catalog.find(c=>c.id===id) : game.cards[game.players[game.active].hand[handIndex]];
   if (!c) return;
   const error = handIndex !== null ? playError(game, game.active, handIndex) : '';
-  openDialog(`<div class="card-detail"><div class="detail-art" style="--tag:${TAGS[c.tag].color}">${image(c)}</div><div class="detail-body"><span class="eyebrow" style="color:${TAGS[c.tag].color}">${TYPES[c.type]} / ${TAGS[c.tag].name}</span><h2>${esc(c.name)}</h2><p class="flavor">${esc(c.flavor)}</p><div class="detail-stats"><span>${icon('zap')} ${c.cost} 能量</span>${isUnit(c)?`<span>${icon('swords')} ${c.attack}</span><span>${icon('heart')} ${c.hp}</span>`:''}</div><div class="effect-detail">${c.type==='fusion'?'<p>消耗兩名同陣營角色；繼承素材陣營及一半總攻擊。</p>':''}<p>${esc(effectText(c))}</p></div>
+  openDialog(`<div class="card-detail"><div class="detail-art" style="--tag:${TAGS[c.tag].color}">${image(c)}</div><div class="detail-body"><span class="eyebrow" style="color:${TAGS[c.tag].color}">${TYPES[c.type]} / ${TAGS[c.tag].name}</span><h2>${esc(c.name)}</h2><p class="flavor" ${c.origin==='自訂'?'data-original':''}>${esc(c.flavor)}</p><div class="detail-stats"><span>${icon('zap')} ${c.cost} 能量</span>${isUnit(c)?`<span>${icon('swords')} ${c.attack}</span><span>${icon('heart')} ${c.hp}</span>`:''}</div><div class="effect-detail">${c.type==='fusion'?'<p>消耗兩名同陣營角色；繼承素材陣營及一半總攻擊。</p>':''}<p>${esc(effectText(c))}</p></div>
     <section class="modal-preview"><button class="quiet-button" data-preview="${esc(c.id)}">${icon('sparkles')} 播放效果演示</button><div id="modal-preview-stage" hidden></div></section>
     ${isUnit(c)?`<section class="set-detail" aria-label="連攜套裝">${setRulesHTML(c.tag)}<p>${c.type==='fusion'?'融合後改用素材陣營的套裝；兩份素材合為 1 件。':'同一方存活的同陣營角色各計 1 件；3 件效果與 2 件效果疊加。'}</p></section>`:''}
     ${handIndex!==null?`<label class="target-select">優先目標<select id="play-target"><option value="">自動選擇</option>${game.units.filter(u=>u.hp>0).map(u=>`<option value="${u.uid}">${u.side===game.active?'友軍':'敵軍'} · ${esc(u.name)} (${u.hp} HP)</option>`).join('')}</select></label><p class="form-error">${esc(error)}</p><button class="primary-button" data-play="${handIndex}" ${error?'disabled':''}>${icon(c.type==='monster'?'swords':'sparkles')} ${c.type==='monster'?'召喚角色':c.type==='trap'?'設置陷阱':c.type==='fusion'?'融合召喚':'發動卡牌'}</button>`:
     `<button class="primary-button" data-add="${esc(c.id)}">${icon('plus')} 加入卡組</button><button class="quiet-button" data-template="${esc(c.id)}">${icon('hammer')} 以此為範本</button>${c.origin==='自訂'?`<button class="text-button danger" data-delete="${esc(c.id)}">${icon('trash-2')} 刪除自訂卡</button>`:''}`}
-    ${c.evidence?`<section class="meaning-detail"><b>梗意設計 · ${esc(ARCHETYPES[c.archetype]?.name || '待設定')}</b>${c.sourceName&&c.sourceName!==c.name?`<p>原始名稱：${esc(c.sourceName)}</p>`:''}<p>依據${c.evidence.field==='name'?'名稱':'來源標籤'}：${esc(c.evidence.value)}</p><p>${esc(c.flavor)}</p>${c.languages?.length?`<p>來源語言：${c.languages.map(code=>esc(languageNames[code] || code)).join(' · ')}</p>`:''}</section>`:''}
+    ${c.evidence?`<section class="meaning-detail"><b>梗意設計 · ${esc(ARCHETYPES[c.archetype]?.name || '待設定')}</b>${c.sourceName&&c.sourceName!==c.name?`<p>原始名稱：<span data-original>${esc(c.sourceName)}</span></p>`:''}<p>依據${c.evidence.field==='name'?'名稱':'來源標籤'}：<span data-original>${esc(c.evidence.value)}</span></p><p>${esc(c.flavor)}</p>${c.languages?.length?`<p>來源語言：<span data-original>${c.languages.map(code=>esc(languageNames[code] || code)).join(' · ')}</span></p>`:''}</section>`:''}
     ${c.source?`<a class="source-link" href="${esc(c.source)}" target="_blank" rel="noopener noreferrer">來源：${c.origin==='全球'?'templates.meme':'Imgflip'} ${icon('arrow-up-right')}</a>`:'<span class="source-link">玩家自訂作品</span>'}</div></div>`, 'card-modal');
 }
 function newDialog(showFields = false) {
@@ -237,7 +240,7 @@ function queueHoverPreview(button) {
     if (!button.isConnected || modal.open) return;
     const id=button.dataset.card || game.players[game.active].hand[Number(button.dataset.hand)];
     const card=catalog.find(c=>c.id===id);if(!card)return;
-    hoverPreview.innerHTML=previewHTML(card);hoverPreview.hidden=false;
+    hoverPreview.innerHTML=previewHTML(card);localize(hoverPreview);hoverPreview.hidden=false;
     const rect=button.getBoundingClientRect(),width=hoverPreview.offsetWidth,height=hoverPreview.offsetHeight;
     hoverPreview.style.left=`${Math.max(12,Math.min(innerWidth-width-12,rect.left))}px`;
     hoverPreview.style.top=`${Math.max(12,Math.min(innerHeight-height-12,rect.top>=height+16?rect.top-height-12:rect.bottom+12))}px`;
@@ -261,7 +264,7 @@ document.addEventListener('click', e => {
   if (!button || button.disabled) return;
   if (button.dataset.preview) {
     stopModalPreview?.();const card=catalog.find(c=>c.id===button.dataset.preview);
-    const stage=$('#modal-preview-stage');stage.hidden=false;stage.innerHTML=previewHTML(card);
+    const stage=$('#modal-preview-stage');stage.hidden=false;stage.innerHTML=previewHTML(card);localize(stage);
     stopModalPreview=mountPreview(stage,card);return;
   }
   if (button.dataset.nav) { screen=button.dataset.nav; render(); return; }
@@ -299,12 +302,12 @@ document.addEventListener('click', e => {
     case 'fields': newDialog(true); break;
     case 'clash': startClash(); break;
     case 'handoff': handoff=false;modal.close();render();break;
-    case 'sound': mute=!mute; sound(); button.innerHTML=icon(mute?'volume-x':'volume-2'); button.setAttribute('aria-label',mute?'開啟音效':'關閉音效');button.title=mute?'開啟音效':'關閉音效';button.setAttribute('aria-pressed',String(!mute));drawIcons();break;
+    case 'sound': mute=!mute; sound(); button.innerHTML=icon(mute?'volume-x':'volume-2'); button.setAttribute('aria-label',tr(mute?'開啟音效':'關閉音效'));button.title=tr(mute?'開啟音效':'關閉音效');button.setAttribute('aria-pressed',String(!mute));drawIcons();break;
     case 'more': visible+=24; render();break;
     case 'refresh': void refreshCatalog(button);break;
     case 'export': exportProfile();break;
     case 'import': importProfile();break;
-    case 'add-effect': if($('#effect-rows').children.length>=4) toast('最多 4 組效果');else {$('#effect-rows').insertAdjacentHTML('beforeend',effectRow());syncTriggers();drawIcons();}break;
+    case 'add-effect': if($('#effect-rows').children.length>=4) toast('最多 4 組效果');else {$('#effect-rows').insertAdjacentHTML('beforeend',effectRow());syncTriggers();localize($('#effect-rows'));drawIcons();}break;
     case 'remove-effect': button.closest('.effect-row').remove();break;
   }
 });
@@ -312,22 +315,27 @@ document.addEventListener('input', e => {
   if(e.target.id==='search') { const pos=e.target.selectionStart; query=e.target.value; visible=24; render(); const input=$('#search'); input.focus(); try {input.setSelectionRange(pos,pos);} catch {} }
 });
 document.addEventListener('change', e=>{
+  if(e.target.id==='interface-language') {
+    const saved=setLocale(e.target.value);regionNames=new Intl.DisplayNames([getLocale()],{type:'region'});
+    render();appearanceDialog();$('#interface-language').focus();
+    if(!saved)toast('語言已套用，但瀏覽器無法儲存設定');
+  }
   if(e.target.name==='theme') {if(!applyTheme(e.target.value))toast('色系已套用，但瀏覽器無法儲存設定');render();}
   if(e.target.id==='origin-filter') {origin=e.target.value;visible=24;render();}
   if(e.target.id==='language-filter') {sourceLanguage=e.target.value;visible=24;render();}
   if(e.target.id==='country-filter') {sourceCountry=e.target.value;visible=24;render();}
   if(e.target.id==='ability-filter') {ability=e.target.value;visible=24;render();}
-  if(e.target.name==='type') syncTriggers();
+  if(e.target.name==='type') {syncTriggers();localize($('#effect-rows'));}
 });
 document.addEventListener('submit', e=>{
   if(e.target.id==='match-form') {
     e.preventDefault(); const values=Object.fromEntries(new FormData(e.target));
-    try { game=createGame({catalog,deck:profile.deck,...values});counted=false;handoff=false;screen='battle';modal.close();render(); } catch(error) {$('#match-error').textContent=error.message;} return;
+    try { game=createGame({catalog,deck:profile.deck,...values});counted=false;handoff=false;screen='battle';modal.close();render(); } catch(error) {$('#match-error').textContent=tr(error.message);} return;
   }
   if(e.target.id==='card-form') {
     e.preventDefault(); const data=Object.fromEntries(new FormData(e.target));
     data.effects=[...$('#effect-rows').children].map(row=>({trigger:$('[name="trigger"]',row).value,action:$('[name="action"]',row).value,target:$('[name="target"]',row).value,amount:Number($('[name="amount"]',row).value)}));
-    try { const card=validateCustom(data); profile.custom.push(card);catalog=collect();persist();formBase=null;screen='collection';origin='自訂';filter='all';sourceLanguage='all';sourceCountry='all';ability='all';query='';render();toast(`已鑄造「${card.name}」`); } catch(error) {$('#form-error').textContent=error.message;}
+    try { const card=validateCustom(data); profile.custom.push(card);catalog=collect();persist();formBase=null;screen='collection';origin='自訂';filter='all';sourceLanguage='all';sourceCountry='all';ability='all';query='';render();toast(`已鑄造「${card.name}」`); } catch(error) {$('#form-error').textContent=tr(error.message);}
   }
 });
 document.addEventListener('error', e=>{if(e.target instanceof HTMLImageElement) {const parent=e.target.parentElement;e.target.remove();parent.classList.add('image-failed');parent.setAttribute('data-fallback','MEME');}},true);
