@@ -4,6 +4,7 @@ import { ARCHETYPES } from './semantics.js';
 import { createGame, createDailyGame, randomWorldDeck, playCard, playError, units, combos, planAI, finishRound, isUnit, moveUnit } from './game.js';
 import { bindDrag, dropIntent } from './drag.js';
 import { Arena } from './arena.js';
+import { MatchClient } from './online.js';
 import { mountPreview } from './preview.js';
 import { THEMES, loadTheme, applyTheme } from './preferences.js';
 import { LANGUAGES, getLocale, setLocale, tr, localize } from './i18n.js';
@@ -24,6 +25,13 @@ let game = createGame({ catalog, deck: validDeck() });
 let screen = 'battle', arena, query = '', filter = 'all', origin = 'all', visible = 24, mute = true, audio, counted = false;
 let handoff = false, toastTimer, formBase = null;
 let selected = null, dragging = false, cancelDrag;
+let online = null, onlineBusy = false, replaying = false, replayKey = '';
+const network = new MatchClient(receiveOnline, message => {
+  if (online) online.error = true;
+  onlineBusy = false;
+  if (!replaying) render();
+  toast(message);
+});
 let previewTimer, hoverCard, stopHoverPreview, stopModalPreview;
 const hoverPreview = document.createElement('aside');
 hoverPreview.className = 'hover-preview'; hoverPreview.hidden = true; hoverPreview.id = 'card-effect-preview';
@@ -35,6 +43,50 @@ const app = $('#app'), modal = $('#modal');
 
 function collect() { return [...new Map([...CATALOG, ...templateCards(profile.web), ...profile.custom].map(c => [c.id, c])).values()]; }
 function validDeck() { return profile.deck.length >= 10 && profile.deck.some(id => catalog.find(c => c.id === id)?.type === 'monster') ? profile.deck : PRESETS.starter.deck; }
+function canPlay() { return game.phase==='plan'&&!handoff&&!onlineBusy&&(!online||(online.status==='matched'&&!online.error&&!online.battling&&online.turn===online.side)); }
+function onlineStatus() {
+  if (!online) return '';
+  if (online.error) return '連線中斷，正在重試';
+  if (online.status==='joining') return '正在連線';
+  if (online.status==='waiting') return '尋找對手中';
+  if (game.phase==='over') return '對決結束';
+  if (replaying||online.battling) return '碰撞對決中';
+  return `${tr(online.turn===online.side?'輪到你部署':'等待對手部署')} · ${online.remaining} s${online.opponentOffline?` · ${tr('對手暫時離線')}`:''}`;
+}
+function receiveOnline(state) {
+  if (state.status==='idle') {
+    const previous=online;online=null;onlineBusy=false;replayKey='';
+    if(previous){game=createGame({catalog,deck:validDeck()});screen='battle';render();}
+    return;
+  }
+  const changed=!online||online.version!==state.version||online.status!==state.status||online.battling!==state.battling||online.error;
+  const resumeCompleted=state.status==='matched'&&!online?.id&&!state.battling;
+  online=state;onlineBusy=false;
+  if (replaying) return;
+  if (!changed) { const status=$('#online-status');if(status)status.textContent=tr(onlineStatus());return; }
+  if(state.status==='matched') {
+    screen='battle';modal.close();handoff=false;
+    const key=`${state.id}:${state.replay?.round}`;
+    if(resumeCompleted)replayKey=key;
+    if(state.replay&&key!==replayKey) {
+      replayKey=key;replaying=true;
+      game=structuredClone(state.game);game.phase='battle';game.round=state.replay.round;
+      state.replay.energy.forEach((energy,i)=>game.players[i].energy=energy);
+      render();arena.startReplay(state.replay);return;
+    }
+    game=state.game;
+    if(game.phase==='over'){battleDone(false);return;}
+  }
+  render();
+}
+async function onlineCommand(action,data={}) {
+  if(onlineBusy||!online)return;
+  onlineBusy=true;cancelDrag?.();render();
+  await network.send(action,{version:online.version,...data});
+}
+function matchmakingDialog() {
+  openDialog(`<div class="dialog-heading"><h2>線上匹配</h2><p>自由卡組 · 20 LP · 每次部署 90 秒</p><p>自訂卡可參戰；場地採先進入佇列的玩家設定。</p></div><form id="online-form"><label>場地<select name="field">${FIELDS.map(f=>`<option value="${f.id}" ${game.field===f.id?'selected':''}>${f.name}</option>`).join('')}</select></label><p class="form-error" id="online-error" role="alert"></p><button class="primary-button" type="submit">${icon('swords')} 開始匹配</button></form>`,'small-modal');
+}
 function persist() { try { saveProfile(profile); return true; } catch { toast('瀏覽器儲存空間不足，請匯出卡組備份'); return false; } }
 function toast(message) { clearTimeout(toastTimer); $('#toast').textContent = tr(message); $('#toast').classList.add('show'); toastTimer = setTimeout(() => $('#toast').classList.remove('show'), 4200); }
 function sound(kind = 'click') {
@@ -84,7 +136,8 @@ function setRulesHTML(tag) {
 }
 function battleHTML() {
   const p = game.players[game.active], field = FIELDS.find(f => f.id === game.field), tags = combos(game, game.active);
-  return `<main class="duel-page"><div class="duel-toolbar"><h1>對戰</h1><span>${game.challenge?`每日挑戰 ${game.challenge}`:game.mode==='ai'?'人機對決':'同機雙人'}</span><span>${{classic:'生命決勝',knockout:'五次擊倒',sandbox:'自由沙盒'}[game.goal]}</span><button class="text-button" data-action="daily" ${game.phase==='battle'?'disabled':''}>${icon('trophy')} 每日挑戰</button><button class="icon-button" data-action="new" title="新對決" aria-label="新對決" ${game.phase==='battle'?'disabled':''}>${icon('rotate-ccw')}</button></div>
+  return `<main class="duel-page"><div class="duel-toolbar"><h1>對戰</h1><span>${online?'線上匹配':game.challenge?`每日挑戰 ${game.challenge}`:game.mode==='ai'?'人機對決':'同機雙人'}</span><span>${{classic:'生命決勝',knockout:'五次擊倒',sandbox:'自由沙盒'}[game.goal]}</span>${online?`<button class="text-button" data-action="leave-online" ${onlineBusy?'disabled':''}>${icon('x')} ${online.status==='matched'?'離開對局':'取消匹配'}</button>`:`<button class="quiet-button" data-action="matchmaking" ${game.phase==='battle'?'disabled':''}>${icon('swords')} 匹配對戰</button><button class="text-button" data-action="daily" ${game.phase==='battle'?'disabled':''}>${icon('trophy')} 每日挑戰</button><button class="icon-button" data-action="new" title="新對決" aria-label="新對決" ${game.phase==='battle'?'disabled':''}>${icon('rotate-ccw')}</button>`}</div>
+    ${online?`<div class="online-status" role="status"><span id="online-status" data-original>${esc(tr(onlineStatus()))}</span>${online.status==='matched'?`<small>${tr('對局')} ${online.id.slice(0,8)}</small>`:''}</div>`:''}
     <div class="duel-layout"><aside class="card-inspector" id="card-inspector">${inspectorHTML()}</aside>
     <section class="duel-table" aria-label="對戰區"><div id="scoreboard" class="duel-scoreboard">${playerHUD(1-game.active)}${playerHUD(game.active)}</div>
       <div class="duel-round"><span id="phase-chip">${game.phase==='battle'?'碰撞對決中':game.phase==='over'?'對決結束':'部署階段'}</span><span>回合 <b id="round-number">${String(game.round).padStart(2,'0')}</b></span></div>
@@ -94,7 +147,7 @@ function battleHTML() {
         <div class="formation own-formation">${formationHTML(game.active)}</div>
         <div class="drop-status" id="drop-status" role="status" aria-live="polite"></div>
       </div>
-      <div class="duel-actions"><div class="energy-box"><span>${icon('zap')} 能量</span><strong>${game.goal==='sandbox'?'∞':p.energy}<small>/ ${Math.min(8,2+game.round)}</small></strong></div><span class="pile-count">${icon('layers')} ${p.deck.length}<small>牌庫</small></span><span class="pile-count">${icon('trash-2')} ${p.discard.length}<small>墓地</small></span><button class="primary-button clash-button" data-action="clash" ${game.phase!=='plan'||handoff?'disabled':''}>${icon('swords')} ${game.mode==='local'&&game.active===0?'完成部署':'開始碰撞'} ${icon('arrow-right')}</button></div>
+      <div class="duel-actions"><div class="energy-box"><span>${icon('zap')} 能量</span><strong>${game.goal==='sandbox'?'∞':p.energy}<small>/ ${Math.min(8,2+game.round)}</small></strong></div><span class="pile-count">${icon('layers')} ${p.deck.length}<small>牌庫</small></span><span class="pile-count">${icon('trash-2')} ${p.discard.length}<small>墓地</small></span><button class="primary-button clash-button" data-action="clash" ${!canPlay()?'disabled':''}>${icon('swords')} ${online||game.mode==='local'&&game.active===0?'完成部署':'開始碰撞'} ${icon('arrow-right')}</button></div>
       <section class="hand-section" aria-label="手牌"><div class="hand-heading"><h2>手牌 <span>${handoff?'?':p.hand.length}</span></h2><button class="text-button" data-action="fields" ${game.phase==='battle'?'disabled':''}>更換場地 ${icon('arrow-up-right')}</button></div><div class="hand-cards">${handoff?'<div class="empty-state">等待玩家 02 接手</div>':p.hand.map((id,i)=>cardHTML(game.cards[id],i)).join('')||'<div class="empty-state">手牌已用盡，下回合繼續抽牌。</div>'}</div></section>
     </section><aside class="duel-feed"><div class="synergy-section"><h3>${icon('sparkles')} 連攜套裝 <span id="set-count">${tags.length}</span></h3><div class="synergies" id="set-progress">${setProgressHTML()}</div><details class="set-guide"><summary>套裝效果 · 2 / 3 件</summary><p>同陣營角色湊滿 2 名或 3 名就有加成，重複卡也算。角色離場後重新計算，已拿到的能量、手牌與護盾不會收回。</p>${Object.keys(TAGS).map(setRulesHTML).join('')}</details></div><div class="log-section"><h3>對決紀錄<span id="collision-count">${game.collisions} 次碰撞</span></h3><ol id="battle-log" aria-live="polite" aria-relevant="additions">${logHTML()}</ol></div></aside></div></main>`;
 }
@@ -140,6 +193,10 @@ function render() {
   arena?.destroy(); arena = null;
   app.innerHTML = `${header()}${screen==='battle'?battleHTML():screen==='collection'?collectionHTML():workshopHTML()}`;
   drawIcons();
+  if(online) {
+    for(const button of app.querySelectorAll('[data-nav],[data-action="fields"]'))button.disabled=true;
+    if(!canPlay())for(const button of app.querySelectorAll('[data-hand],[data-drop]'))button.disabled=true;
+  }
   if (screen === 'battle') arena = new Arena($('#arena'), game, battleDone, () => { sound('hit'); updateBattleHUD(); });
   if (screen === 'workshop') syncTriggers();
   localize(app);
@@ -162,7 +219,7 @@ function appearanceDialog() {
   openDialog(`<div class="dialog-heading"><h2>語言與色系</h2></div><label class="language-choice">介面語言<select id="interface-language">${Object.entries(LANGUAGES).map(([id,name])=>`<option value="${id}" ${getLocale()===id?'selected':''}>${name}</option>`).join('')}</select></label><fieldset class="theme-picker"><legend>配色</legend>${Object.entries(THEMES).map(([id,theme])=>`<label><input type="radio" name="theme" value="${id}" ${document.documentElement.dataset.theme===id?'checked':''}><span class="theme-swatch" style="--swatch:${theme.accent};--rival:${theme.rival}"></span><b>${theme.name}</b></label>`).join('')}</fieldset>`,'small-modal');
 }
 function showCard(id, handIndex = null) {
-  const c = handIndex === null ? catalog.find(c=>c.id===id) : game.cards[game.players[game.active].hand[handIndex]];
+  const c = handIndex === null ? game.cards[id] || catalog.find(c=>c.id===id) : game.cards[game.players[game.active].hand[handIndex]];
   if (!c) return;
   const error = handIndex !== null ? playError(game, game.active, handIndex) : '';
   openDialog(`<div class="card-detail"><div class="detail-art" style="--tag:${TAGS[c.tag].color}">${image(c)}</div><div class="detail-body"><span class="eyebrow" style="color:${TAGS[c.tag].color}">${TYPES[c.type]} / ${TAGS[c.tag].name}</span><h2>${esc(c.name)}</h2><p class="flavor" ${c.origin==='自訂'?'data-original':''}>${esc(c.flavor)}</p><div class="detail-stats"><span>${icon('zap')} ${c.cost} 能量</span>${isUnit(c)?`<span>${icon('swords')} ${c.attack}</span><span>${icon('heart')} ${c.hp}</span>`:''}</div><div class="effect-detail">${c.type==='fusion'?'<p>消耗兩名同陣營角色；繼承素材陣營及一半總攻擊。</p>':''}<p>${esc(effectText(c))}</p></div>
@@ -172,11 +229,13 @@ function showCard(id, handIndex = null) {
     `<button class="primary-button" data-add="${esc(c.id)}">${icon('plus')} 加入卡組</button><button class="quiet-button" data-template="${esc(c.id)}">${icon('hammer')} 以此為範本</button>${c.origin==='自訂'?`<button class="text-button danger" data-delete="${esc(c.id)}">${icon('trash-2')} 刪除自訂卡</button>`:''}`}
     ${c.evidence?`<section class="meaning-detail"><b>梗意設計 · ${esc(ARCHETYPES[c.archetype]?.name || '待設定')}</b>${c.sourceName&&c.sourceName!==c.name?`<p>原始名稱：<span data-original>${esc(c.sourceName)}</span></p>`:''}<p>依據${c.evidence.field==='name'?'名稱':'來源標籤'}：<span data-original>${esc(c.evidence.value)}</span></p><p>${esc(c.flavor)}</p>${c.languages?.length?`<p>來源語言：<span data-original>${c.languages.map(code=>esc(languageNames[code] || code)).join(' · ')}</span></p>`:''}</section>`:''}
     ${c.source?`<a class="source-link" href="${esc(c.source)}" target="_blank" rel="noopener noreferrer">來源：${c.origin==='全球'?'templates.meme':'Imgflip'} ${icon('arrow-up-right')}</a>`:'<span class="source-link">玩家自訂作品</span>'}</div></div>`, 'card-modal');
+  if(online)for(const button of modal.querySelectorAll('[data-add],[data-template],[data-delete]'))button.hidden=true;
 }
 function newDialog(showFields = false) {
   openDialog(`<div class="dialog-heading"><span class="eyebrow accent">NEXT MATCH</span><h2>${showFields?'選擇你的戰場':'建立新對決'}</h2></div><form id="match-form"><div class="match-options"><label>對手<select name="mode"><option value="ai" ${game.mode==='ai'?'selected':''}>網路混沌 AI</option><option value="local" ${game.mode==='local'?'selected':''}>同機雙人</option></select></label><label>勝利目標<select name="goal">${[['classic','生命決勝 · 20 LP'],['knockout','率先擊倒 5 名角色'],['sandbox','自由沙盒 · 無限能量']].map(([v,t])=>`<option value="${v}" ${game.goal===v?'selected':''}>${t}</option>`).join('')}</select></label></div><fieldset class="field-picker"><legend>場地</legend>${FIELDS.map((f,i)=>`<label class="field-option" style="--field:${f.color}"><input type="radio" name="field" value="${f.id}" ${game.field===f.id?'checked':''}><span class="field-art field-art-${f.id}"><span>0${i+1}</span>${icon(f.id==='fine'?'flame':f.id==='moon'?'sparkles':f.id==='xp'?'heart':'layers')}</span><b>${f.name}</b><small>${f.description}</small></label>`).join('')}</fieldset><p id="match-error" class="form-error" role="alert"></p><button class="primary-button" type="submit">${icon('swords')} 開始新對決 ${icon('arrow-right')}</button></form>`, 'match-modal');
 }
 function startClash() {
+  if(online){if(canPlay())void onlineCommand('ready');return;}
   if (game.phase !== 'plan') return;
   game.players[game.active].ready = true;
   if (game.mode === 'local' && game.active === 0) {
@@ -189,6 +248,12 @@ function startClash() {
   game.phase = 'battle'; render(); sound(); arena.start();
 }
 function battleDone(advance = true) {
+  if(online) {
+    if(replaying){replaying=false;game=online.game;}
+    render();
+    if(game.phase==='over')openDialog(`<div class="result-dialog">${icon('trophy')}<h2>${game.winner==='draw'?'勢均力敵':game.winner===online.side?'這局，你贏了！':'對手獲勝'}</h2><p>${game.round} 回合 · ${game.collisions} 次碰撞</p><button class="primary-button" data-action="finish-online">返回對戰</button></div>`,'small-modal');
+    return;
+  }
   if (advance) finishRound(game);
   if (game.phase === 'over' && !counted) {
     counted = true; profile.stats.games++;
@@ -296,6 +361,7 @@ function paintSelection() {
   for(const zone of app.querySelectorAll('[data-drop]'))zone.classList.toggle('drop-valid',!!selected&&!selectionIntent(zone).error);
 }
 function playFromHand(index,targetId,slot) {
+  if(online){if(canPlay()){modal.close();void onlineCommand('play',{index,targetId:targetId||undefined,slot});return true;}return false;}
   const result=playCard(game,game.active,index,targetId,slot);
   if(!result.ok){toast(result.error);return false;}
   modal.close();selected=null;sound();
@@ -310,11 +376,11 @@ function dropSelected(zone) {
   dragging=false;
   const intent=selectionIntent(zone);
   if(intent.error){if(zone)toast(intent.error);selected=null;paintSelection();return;}
-  if(selected.uid){moveUnit(game,game.active,selected.uid,intent.slot);sound();render();}
+  if(selected.uid){if(online){void onlineCommand('move',{uid:selected.uid,slot:intent.slot});return;}moveUnit(game,game.active,selected.uid,intent.slot);sound();render();}
   else playFromHand(selected.index,intent.targetId,intent.slot);
 }
 cancelDrag=bindDrag(app,{
-  canStart:button=>screen==='battle'&&game.phase==='plan'&&!handoff&&!modal.open&&(button.hasAttribute('data-hand')||Number(button.dataset.side)===game.active),
+  canStart:button=>screen==='battle'&&canPlay()&&!modal.open&&(button.hasAttribute('data-hand')||Number(button.dataset.side)===game.active),
   start:button=>{dragging=true;selectPiece(button);},
   over:zone=>{
     for(const current of app.querySelectorAll('.drop-hover'))current.classList.remove('drop-hover');
@@ -356,6 +422,11 @@ document.addEventListener('click', e => {
     $('#confirm-delete').onclick=()=>{profile.custom=profile.custom.filter(c=>c.id!==id);profile.deck=profile.deck.filter(x=>x!==id);catalog=collect();persist();modal.close();render();};return;
   }
   switch(button.dataset.action) {
+    case 'matchmaking': matchmakingDialog();break;
+    case 'leave-online':
+      if(online.status!=='matched'||game.phase==='over'){void onlineCommand('leave');break;}
+      openDialog(`<div class="dialog-heading"><h2>離開對局？</h2><p>離開會判負。</p></div><button class="quiet-button" data-action="close">取消</button><button class="primary-button" data-action="finish-online">確認離開</button>`,'small-modal');break;
+    case 'finish-online': modal.close();replaying=false;void onlineCommand('leave');break;
     case 'inspect': {const c=selectedCard();if(c)showCard(c.id,selected?.uid?null:selected?.index??0);break;}
     case 'cancel-selection': selected=null;paintSelection();break;
     case 'appearance': appearanceDialog();break;
@@ -400,6 +471,12 @@ document.addEventListener('change', e=>{
   if(e.target.name==='type') {syncTriggers();localize($('#effect-rows'));}
 });
 document.addEventListener('submit', e=>{
+  if(e.target.id==='online-form') {
+    e.preventDefault();const field=new FormData(e.target).get('field'),deck=validDeck();
+    const known=new Set(CATALOG.map(c=>c.id));
+    online={status:'joining'};onlineBusy=true;counted=false;replayKey='';screen='battle';modal.close();render();
+    void network.join({deck,field,custom:catalog.filter(c=>deck.includes(c.id)&&!known.has(c.id))}).catch(error=>{online=null;onlineBusy=false;render();toast(error.message);});return;
+  }
   if(e.target.id==='match-form') {
     e.preventDefault(); const values=Object.fromEntries(new FormData(e.target));
     try { game=createGame({catalog,deck:profile.deck,...values});counted=false;handoff=false;screen='battle';modal.close();render(); } catch(error) {$('#match-error').textContent=tr(error.message);} return;
@@ -415,4 +492,5 @@ modal.addEventListener('click',e=>{if(e.target===modal&&!handoff){const r=modal.
 modal.addEventListener('cancel',e=>{if(handoff)e.preventDefault();});
 window.addEventListener('hashchange',()=>{if(location.hash==='#battle'&&game.phase!=='battle'){screen='battle';render();}});
 render();
+if(network.token){online={status:'joining'};render();void network.send('state');}
 if(loaded.error) toast(loaded.error);

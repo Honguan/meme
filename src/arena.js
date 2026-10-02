@@ -27,6 +27,11 @@ export class Arena {
     this.running = true; this.accumulator = 0; this.started = performance.now();
     this.battle = createBattle(this.game, (...args) => this.presentImpact(...args));
   }
+  startReplay(replay) {
+    this.replay = replay; this.replayIndex = 0; this.running = true; this.started = performance.now();
+    this.game.units = structuredClone(replay.units); this.game.field = replay.field; this.game.round = replay.round;
+    this.battle = { bodies: new Map(), dispose() {} };
+  }
   presentImpact(x, y, a, b, report) {
       const at = performance.now();
       this.impacts = this.impacts.filter(p => p.kind !== 'hit' && at - p.at < 850);
@@ -44,6 +49,20 @@ export class Arena {
       this.onUpdate?.(a, b);
   }
   animate(now) {
+    if (this.replay) {
+      const elapsed = now - this.started;
+      while (this.replayIndex < this.replay.frames.length && this.replay.frames[this.replayIndex].at <= elapsed) {
+        const frame = this.replay.frames[this.replayIndex++];
+        this.battle.bodies = new Map(frame.positions.map(([id,x,y]) => [id,{ position:{x,y}, velocity:{x:0,y:0} }]));
+        for (const [id,hp,shield,dead,attack] of frame.units) Object.assign(this.game.units.find(u => u.uid === id), { hp,shield,dead,attack });
+        frame.hp.forEach((hp,i) => this.game.players[i].hp = hp);
+        this.game.collisions = frame.collisions; this.game.log = frame.log;
+        for (const hit of frame.hits) this.presentImpact(hit.x,hit.y,this.game.units.find(u=>u.uid===hit.a),this.game.units.find(u=>u.uid===hit.b),hit.report);
+      }
+      if (elapsed >= this.replay.duration) { this.replay = null; this.running = false; this.battle = null; this.onEnd(); }
+      if (this.disposed) return;
+      this.draw(now); this.frame = requestAnimationFrame(this.animate); return;
+    }
     const delta = Math.min(now - (this.last || now), 100); this.last = now;
     if (this.running && !this.endingAt && now >= (this.hitStopUntil || 0)) {
       this.accumulator += delta;

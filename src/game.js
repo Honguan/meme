@@ -2,7 +2,9 @@ import { CATALOG, DEFAULT_DECK, TAGS, FIELDS } from './catalog.js';
 
 export const isUnit = c => c.type === 'monster' || c.type === 'fusion';
 export function random(seed) {
-  return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const rng = () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  Object.defineProperty(rng, 'state', { get: () => seed });
+  return rng;
 }
 const shuffle = (cards, rng) => {
   const copy = [...cards];
@@ -41,7 +43,7 @@ export function createGame({ catalog = CATALOG, deck = DEFAULT_DECK, opponentDec
     players: [0, 1].map(side => ({ name: side ? (mode === 'ai' ? '網路混沌 AI' : '玩家 02') : '玩家 01', hp: 20, energy: 3, deck: [], hand: [], discard: [], traps: [], ready: false, ko: 0 })) };
   for (let side = 0; side < 2; side++) {
     const p = g.players[side];
-    p.deck = shuffle(mode === 'ai' && side ? opponent : valid, g.rng);
+    p.deck = shuffle((mode === 'ai' || mode === 'online') && side ? opponent : valid, g.rng);
     const first = p.deck.findIndex(id => cards[id]?.type === 'monster');
     if (first >= 0) summon(g, cards[p.deck.splice(first, 1)[0]], side);
     draw(g, side, 5);

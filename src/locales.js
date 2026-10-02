@@ -1,5 +1,28 @@
 // Source-language keys keep domain values and imported card data independent of UI language.
 const rows = `
+線上匹配|Online matchmaking|オンラインマッチ|Emparejamiento en línea
+匹配對戰|Find opponent|対戦相手を探す|Buscar rival
+開始匹配|Find a match|マッチング開始|Buscar partida
+取消匹配|Cancel search|検索を中止|Cancelar búsqueda
+尋找對手中|Searching for an opponent|対戦相手を検索中|Buscando rival
+正在連線|Connecting|接続中|Conectando
+連線中斷，正在重試|Connection lost. Reconnecting.|接続が切れました。再接続中。|Conexión perdida. Reconectando.
+輪到你部署|Your turn|あなたの配置ターン|Tu turno
+等待對手部署|Opponent's turn|相手の配置ターン|Turno del rival
+對手暫時離線|Opponent disconnected|相手が一時切断|Rival desconectado
+離開對局|Leave match|対戦を退出|Salir de la partida
+離開對局？|Leave this match?|対戦を退出しますか？|¿Salir de la partida?
+離開會判負。|Leaving counts as a loss.|退出すると敗北になります。|Salir cuenta como derrota.
+確認離開|Leave|退出する|Salir
+返回對戰|Back to duels|対戦に戻る|Volver a duelos
+對手獲勝|Opponent wins|相手の勝利|El rival gana
+對手已離開|A player left the match.|プレイヤーが退出しました。|Un jugador abandonó la partida.
+對局|Match|対戦|Partida
+自由卡組 · 20 LP · 每次部署 90 秒|Open decks · 20 LP · 90 seconds per turn|自由デッキ · 20 LP · 配置は各90秒|Mazos libres · 20 LP · 90 segundos por turno
+自訂卡可參戰；場地採先進入佇列的玩家設定。|Custom cards allowed. The first queued player chooses the field.|カスタムカード使用可。先に待機したプレイヤーのフィールド設定を使用。|Se permiten cartas personalizadas. El primer jugador elige el campo.
+匹配服務暫時無法連線|Matchmaking is temporarily unavailable.|マッチングに接続できません。|Emparejamiento no disponible temporalmente.
+無法儲存對局連線|Unable to save the match session.|対戦セッションを保存できません。|No se puede guardar la sesión.
+對局已更新，請重試|Match updated. Try again.|対戦が更新されました。再試行してください。|Partida actualizada. Inténtalo de nuevo.
 調整站位|Reposition|配置変更|Cambiar posición
 台詞或備註|Quote or note|セリフやメモ|Frase o nota
 對戰|Duel|対戦|Duelo
