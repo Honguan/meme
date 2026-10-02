@@ -1,0 +1,23 @@
+{
+  "name": "meme-clash",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "node --test tests/game.test.js",
+    "test:browser": "playwright test",
+    "catalog:refresh": "node scripts/refresh-catalog.mjs"
+  },
+  "dependencies": {
+    "lucide": "^0.468.0",
+    "matter-js": "^0.20.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "vite": "^7.3.1"
+  }
+}
