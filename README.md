@@ -2,6 +2,8 @@
 
 免費、開源的 2D 物理碰撞卡牌遊戲。用迷因組成卡組，在不同場地連鎖效果，或在自由沙盒自行創作。
 
+[立即遊玩](https://meme-clash-honguan.zippy-goose-5321.chatgpt.site) · [原始碼](https://github.com/Honguan/meme)
+
 ## 開始遊玩
 
 首頁直接進入人機對決。點擊手牌查看效果並召喚／發動；完成部署後按「開始碰撞」。角色由 Matter.js 模擬碰撞，傷害依卡牌、陷阱及陣營連攜共同結算。
