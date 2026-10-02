@@ -12,6 +12,8 @@ function imageFor(url) {
 export class Arena {
   constructor(canvas, game, onEnd, onUpdate) {
     this.canvas = canvas; this.ctx = canvas.getContext('2d'); this.game = game;
+    const theme = getComputedStyle(document.documentElement);
+    this.colors = [theme.getPropertyValue('--accent').trim() || '#d4f75b',theme.getPropertyValue('--pink').trim() || '#fb8aac'];
     this.onEnd = onEnd; this.onUpdate = onUpdate; this.impacts = []; this.running = false;
     this.last = 0; this.accumulator = 0; this.frame = 0; this.reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
     const ratio = Math.min(devicePixelRatio || 1, 2);
@@ -22,7 +24,9 @@ export class Arena {
   start() {
     if (this.running) return;
     this.running = true; this.accumulator = 0; this.started = performance.now();
-    this.battle = createBattle(this.game, (x, y, a, b, report) => {
+    this.battle = createBattle(this.game, (...args) => this.presentImpact(...args));
+  }
+  presentImpact(x, y, a, b, report) {
       const at = performance.now();
       this.impacts = this.impacts.filter(p => p.kind !== 'hit' && at - p.at < 850);
       this.impacts.push({ kind: 'hit', x, y, tag: a.tag, secondTag: b.tag, motif: a.motif || a.tag, secondMotif: b.motif || b.tag, at });
@@ -36,8 +40,7 @@ export class Arena {
       this.hitStopUntil = this.reduced ? 0 : at + 65;
       this.shakeUntil = this.reduced ? 0 : at + 180;
       this.canvas.setAttribute('aria-label', `迷因對決：${report.changes.map(v => `${v.name}${v.ko ? ' 擊倒' : ''}${v.hp ? ` HP ${v.hp > 0 ? '+' : ''}${v.hp}` : ''}${v.shield ? ` 護盾 ${v.shield > 0 ? '+' : ''}${v.shield}` : ''}`).join('；')}`);
-      this.onUpdate(a, b);
-    });
+      this.onUpdate?.(a, b);
   }
   animate(now) {
     const delta = Math.min(now - (this.last || now), 100); this.last = now;
@@ -205,7 +208,7 @@ export class Arena {
     c.restore();
   }
   drawUnit(u, x, y) {
-    const c = this.ctx, color = u.side ? '#fb8aac' : '#d4f75b';
+    const c = this.ctx, color = this.colors[u.side];
     c.fillStyle = '#0007'; c.beginPath(); c.ellipse(x, y + 56, 47, 11, 0, 0, Math.PI * 2); c.fill();
     c.save(); c.translate(x, y); c.beginPath(); c.arc(0, 0, 46, 0, Math.PI * 2); c.clip();
     const image = imageFor(u.image);

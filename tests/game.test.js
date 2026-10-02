@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CATALOG, CORE, TAGS, validateCustom, templateCards, DEFAULT_DECK } from '../src/catalog.js';
-import { createGame, playCard, summon, collide, cleanup, finishRound, planAI, checkWinner, combos, draw, units } from '../src/game.js';
+import { createGame, createDailyGame, randomWorldDeck, playCard, summon, collide, cleanup, finishRound, planAI, checkWinner, combos, draw, units } from '../src/game.js';
+import { previewGame } from '../src/preview.js';
 import { createBattle } from '../src/physics.js';
 import { parseProfile, freshProfile } from '../src/storage.js';
 import world from '../src/data/world-memes.json' with { type: 'json' };
@@ -48,6 +49,48 @@ test('semantic classification prioritizes primary meaning over misleading search
   const a=templateCards([{id:'unknown-a',name:'Dancing Celebration',url:'https://example.com/a.png'}])[0];
   const b=templateCards([{id:'unknown-b',name:'Dancing Celebration',url:'https://example.com/b.png'}])[0];
   assert.equal(a.archetype,'dance');assert.deepEqual(a.effects,b.effects);assert.equal(a.attack,b.attack);
+});
+
+test('card demonstrations isolate every card type from the real match and original definitions',()=>{
+  const live=createGame({seed:123}),before=JSON.stringify(live);
+  for(const c of [...CORE,CATALOG.find(c=>c.origin==='全球')]){
+    const original=JSON.stringify(c),demo=previewGame(c);
+    assert.equal(demo.players[0].hand[0],c.id);assert.equal(demo.goal,'sandbox');
+    const target=demo.units.find(u=>u.side===(c.effects.some(e=>e.target==='enemy'||e.target==='enemies')?1:0));
+    assert.equal(playCard(demo,0,0,target.uid).ok,true,c.id);
+    const sim=createBattle(demo);for(let i=0;i<301;i++)if(sim.step())break;sim.dispose();finishRound(demo);
+    assert.equal(JSON.stringify(c),original);assert.equal(JSON.stringify(live),before);
+  }
+});
+
+test('global random decks are valid sets and daily opponents, hands and fields are reproducible',()=>{
+  for(let seed=1;seed<=20;seed++){
+    const result=randomWorldDeck(CATALOG,seed);
+    assert.equal(result.deck.length,20);assert.equal(new Set(result.deck).size,20);
+    assert.ok(result.deck.slice(0,12).every(id=>CATALOG.find(c=>c.id===id)?.tag===result.tag));
+    assert.doesNotThrow(()=>parseProfile({...freshProfile(),deck:result.deck}));
+  }
+  const a=createDailyGame(CATALOG,'2026-10-02'),b=createDailyGame(CATALOG,'2026-10-02'),c=createDailyGame(CATALOG,'2026-10-03');
+  assert.deepEqual(a.players,b.players);assert.deepEqual(a.units,b.units);assert.equal(a.field,b.field);
+  assert.notDeepEqual(a.players,c.players);assert.equal(a.challenge,'2026-10-02');
+  assert.ok(a.players[1].deck.some(id=>id.startsWith('world-')));
+  assert.throws(()=>createGame({opponentDeck:['missing']}));
+});
+
+test('daily global matchups finish complete games without stalled rounds',()=>{
+  for(const date of ['2026-10-02','2026-10-03','2026-10-04']){
+    const g=createDailyGame(CATALOG,date);
+    while(g.phase!=='over'&&g.round<=35){
+      const p=g.players[0];
+      for(let i=0;i<p.hand.length;){if(!playCard(g,0,i).ok)i++;if(g.phase==='over')break;}
+      if(g.phase==='over')break;planAI(g);if(g.phase==='over')break;
+      g.phase='battle';const sim=createBattle(g);
+      for(let i=0;i<301;i++)if(sim.step())break;
+      sim.dispose();finishRound(g);
+      assert.ok(g.players.every(p=>p.hp>=0&&p.energy>=0&&p.hand.length<=9));
+    }
+    assert.equal(g.phase,'over',date);
+  }
 });
 test('play validation never spends a card or energy on rejected actions',()=>{
   const g=setup();g.players[0].hand=['doge'];g.players[0].energy=0;

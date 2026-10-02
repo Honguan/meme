@@ -29,22 +29,39 @@ export function draw(g, side, count = 1) {
     if (id) p.hand.push(id);
   }
 }
-export function createGame({ catalog = CATALOG, deck = DEFAULT_DECK, field = 'grid', mode = 'ai', goal = 'classic', seed = Date.now() } = {}) {
+export function createGame({ catalog = CATALOG, deck = DEFAULT_DECK, opponentDeck, field = 'grid', mode = 'ai', goal = 'classic', seed = Date.now() } = {}) {
   const cards = Object.fromEntries(catalog.map(c => [c.id, c]));
   const valid = deck.filter(id => cards[id]);
   if (valid.length < 10 || !valid.some(id => cards[id].type === 'monster')) throw new Error('卡組至少 10 張，且需包含角色卡');
+  const opponent = opponentDeck || DEFAULT_DECK;
+  if (opponentDeck && (opponent.length < 10 || opponent.some(id=>!cards[id]) || !opponent.some(id=>cards[id].type==='monster'))) throw new Error('對手卡組無效');
   const g = { cards, rng: random(seed), seed, field: FIELDS.some(f => f.id === field) ? field : 'grid', mode, goal,
     round: 1, phase: 'plan', active: 0, nextId: 1, units: [], log: [], winner: null, collisions: 0,
     players: [0, 1].map(side => ({ name: side ? (mode === 'ai' ? '網路混沌 AI' : '玩家 02') : '玩家 01', hp: 20, energy: 3, deck: [], hand: [], discard: [], traps: [], ready: false, ko: 0 })) };
   for (let side = 0; side < 2; side++) {
     const p = g.players[side];
-    p.deck = shuffle(mode === 'ai' && side ? DEFAULT_DECK : valid, g.rng);
+    p.deck = shuffle(mode === 'ai' && side ? opponent : valid, g.rng);
     const first = p.deck.findIndex(id => cards[id]?.type === 'monster');
     if (first >= 0) summon(g, cards[p.deck.splice(first, 1)[0]], side);
     draw(g, side, 5);
   }
   note(g, '第 1 回合：部署開始');
   return g;
+}
+export function randomWorldDeck(catalog = CATALOG, seed = Date.now()) {
+  const rng = random(seed), tags = Object.keys(TAGS);
+  const tag = tags[Math.floor(rng()*tags.length)];
+  const pool = catalog.filter(c=>c.origin==='全球'&&c.type==='monster'&&c.tag===tag).map(c=>c.id);
+  if (pool.length < 12) throw new Error('全球卡庫尚未備妥');
+  return { tag, deck:[...shuffle(pool,rng).slice(0,12),'tape','imagination','stonks','handshake','reverse','safe','suit','fusion'] };
+}
+export function createDailyGame(catalog = CATALOG, date = new Date().toISOString().slice(0,10)) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date))) throw new Error('挑戰日期無效');
+  const seed = Number(date.replaceAll('-',''));
+  const game = createGame({ catalog, deck:randomWorldDeck(catalog,seed).deck, opponentDeck:randomWorldDeck(catalog,seed+1).deck,
+    field:FIELDS[seed%FIELDS.length].id, seed, mode:'ai', goal:'classic' });
+  game.challenge = date;
+  return game;
 }
 export function fusionPair(g, side) {
   const alive = units(g, side);

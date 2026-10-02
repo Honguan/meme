@@ -24,6 +24,59 @@ test('reduced-motion duel still reports impact results and advances the round',a
   await expect(page.locator('#round-number')).toHaveText('02',{timeout:15000});
 });
 
+test('hover and mobile card previews animate without spending cards or changing saved data',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto('/');
+  const before=await page.locator('.hand-cards').textContent(),stored=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  await page.locator('.hand-cards .meme-card').first().hover();
+  await page.evaluate(()=>window.dispatchEvent(new Event('scroll')));
+  await expect(page.getByRole('tooltip')).toBeVisible();
+  await expect(page.locator('.hover-preview [data-preview-status]')).toContainText('碰撞',{timeout:8000});
+  await page.screenshot({path:'.artifacts/hover-preview.png'});
+  await page.keyboard.press('Escape');await expect(page.getByRole('tooltip')).toBeHidden();
+  expect(await page.locator('.hand-cards').textContent()).toBe(before);
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);
+  await page.setViewportSize({width:390,height:844});
+  await page.locator('.hand-cards .meme-card').first().click();
+  await page.getByRole('button',{name:'播放效果演示'}).click();
+  await expect(page.locator('#modal-preview-stage canvas')).toBeVisible();
+  await expect(page.locator('#modal-preview-stage [data-preview-status]')).toContainText('演示完成',{timeout:15000});
+  await page.screenshot({path:'.artifacts/modal-preview-mobile.png',fullPage:true});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+  await page.getByRole('button',{name:'關閉',exact:true}).click();
+  await expect(page.locator('#round-number')).toHaveText('01');expect(errors).toEqual([]);
+});
+
+test('random global decks require confirmation and daily challenge leaves the saved deck intact',async({page})=>{
+  await page.goto('/');await page.getByRole('button',{name:'卡組工坊'}).click();
+  const before=await page.locator('.deck-list').textContent();
+  await page.getByRole('button',{name:'全球隨機套裝',exact:true}).click();
+  await page.getByRole('button',{name:'取消',exact:true}).click();expect(await page.locator('.deck-list').textContent()).toBe(before);
+  await page.getByRole('button',{name:'全球隨機套裝',exact:true}).click();await page.getByRole('button',{name:'取代目前卡組'}).click();
+  await expect(page.locator('.deck-count')).toContainText('20');
+  const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).deck);
+  expect(saved.filter(id=>id.startsWith('world-')).length).toBe(12);
+  await page.getByRole('button',{name:'每日挑戰',exact:true}).click();await page.getByRole('button',{name:'開始每日挑戰'}).click();
+  await expect(page.locator('.battle-topline')).toContainText('每日挑戰');
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).deck)).toEqual(saved);
+  await page.getByRole('button',{name:'開始碰撞'}).click();await expect(page.locator('#round-number')).toHaveText('02',{timeout:15000});
+});
+
+test('palette swatches change the interface and survive reload without changing the deck',async({page})=>{
+  await page.goto('/');const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  await page.getByRole('button',{name:'色系設定'}).click();
+  await page.getByRole('radio',{name:'珊瑚熱浪'}).check();
+  await expect(page.locator('html')).toHaveAttribute('data-theme','coral');
+  expect(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--accent').trim())).toBe('#ffac91');
+  await page.getByRole('button',{name:'關閉',exact:true}).click();await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-theme','coral');
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+  await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'色系設定'}).click();
+  await page.getByRole('radio',{name:'冰河藍綠'}).check();
+  await expect(page.locator('html')).toHaveAttribute('data-theme','ice');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+  await page.screenshot({path:'.artifacts/palette-mobile.png',fullPage:true});
+});
+
 test('global library filters source language and semantic ability and preserves world cards in a saved deck',async({page})=>{
   await page.goto('/');await page.getByRole('button',{name:'卡牌圖鑑'}).click();
   await page.getByRole('combobox',{name:'卡牌來源'}).selectOption('全球');
