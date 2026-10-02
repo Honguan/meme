@@ -29,8 +29,16 @@ export function createBattle(game, onImpact = () => {}) {
       const key = [a.uid, b.uid].sort().join(':');
       if (tick - (lastHits.get(key) ?? -100) < 22) continue;
       lastHits.set(key, tick);
+      const before = game.units.map(u => ({ uid: u.uid, hp: u.hp, shield: u.shield, dead: u.dead }));
+      const traps = game.players.flatMap(p => p.traps.map(id => game.cards[id].name));
       collide(game, a, b);
-      onImpact((bodyA.position.x + bodyB.position.x) / 2, (bodyA.position.y + bodyB.position.y) / 2, a, b);
+      const changes = before.flatMap(prev => {
+        const u = game.units.find(u => u.uid === prev.uid), body = bodies.get(prev.uid);
+        if (!body || (u.hp === prev.hp && u.shield === prev.shield && u.dead === prev.dead)) return [];
+        return [{ uid: u.uid, name: u.name, tag: u.tag, side: u.side, x: body.position.x, y: body.position.y,
+          hp: u.hp - prev.hp, shield: u.shield - prev.shield, ko: !prev.dead && u.dead }];
+      });
+      onImpact((bodyA.position.x + bodyB.position.x) / 2, (bodyA.position.y + bodyB.position.y) / 2, a, b, { changes, traps });
     }
   });
   return {

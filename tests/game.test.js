@@ -64,6 +64,30 @@ test('Matter.js produces genuine opposing-body contacts and bounded rounds',()=>
   const sim=createBattle(g);let ticks=0;while(!sim.step()&&ticks++<400){}sim.dispose();
   assert.ok(g.collisions>0);assert.ok(ticks<=300);assert.ok(g.units.some(u=>u.hp<u.maxHp));
 });
+
+test('impact reports include actual HP, shield, trap and off-contact area damage without changing combat',()=>{
+  const build=()=>{
+    const g=setup(),base={...card('doge'),effects:[],attack:20,hp:100};
+    summon(g,base,0);
+    const victim=summon(g,{...base,attack:0,hp:6},1);victim.shield=2;
+    summon(g,{...base,attack:0},1);g.players[0].traps=['pikachu'];g.phase='battle';
+    return g;
+  };
+  const g=build(),reports=[];
+  const sim=createBattle(g,(x,y,a,b,report)=>reports.push({x,y,a:a.uid,b:b.uid,...structuredClone(report)}));
+  for(let i=0;i<301;i++)if(sim.step())break;
+  sim.dispose();
+  assert.ok(reports.length>0);
+  assert.ok(reports.some(r=>r.traps.includes('驚訝皮卡丘')));
+  assert.ok(reports.some(r=>r.changes.some(c=>c.ko&&c.uid==='u4')));
+  assert.ok(reports.some(r=>r.changes.some(c=>c.shield===-2)));
+  assert.ok(reports.some(r=>r.changes.some(c=>c.uid!==r.a&&c.uid!==r.b&&c.hp<0)));
+  assert.ok(reports.flatMap(r=>r.changes).every(c=>Number.isFinite(c.x)&&Number.isFinite(c.y)));
+  const control=build(),plain=createBattle(control);
+  for(let i=0;i<301;i++)if(plain.step())break;
+  plain.dispose();
+  assert.deepEqual(g.units,control.units);assert.deepEqual(g.players,control.players);
+});
 test('AI completes seeded matches without invalid cards, frozen rounds or overflow',()=>{
   for(let seed=1;seed<=12;seed++){
     const g=createGame({seed});

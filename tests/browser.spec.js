@@ -10,9 +10,18 @@ test('real desktop match animates and finishes a round without console errors',a
   await expect(page.locator('#phase-chip')).toHaveText('碰撞對決中');
   const before=await page.locator('canvas').screenshot();
   await expect(page.locator('#collision-count')).not.toHaveText('0 次碰撞',{timeout:12000});
+  await expect(page.locator('canvas')).toHaveAttribute('aria-label',/迷因對決：/);
+  await page.locator('canvas').screenshot({path:'.artifacts/impact.png'});
   const after=await page.locator('canvas').screenshot();expect(before.equals(after)).toBeFalsy();
   await expect(page.locator('#round-number')).toHaveText('02',{timeout:15000});
   expect(errors).toEqual([]);
+});
+
+test('reduced-motion duel still reports impact results and advances the round',async({page})=>{
+  await page.emulateMedia({reducedMotion:'reduce'});await page.goto('/');
+  await page.getByRole('button',{name:'開始碰撞'}).click();
+  await expect(page.locator('canvas')).toHaveAttribute('aria-label',/迷因對決：/,{timeout:12000});
+  await expect(page.locator('#round-number')).toHaveText('02',{timeout:15000});
 });
 test('collection, custom multi-effect card, saved deck and reload',async({page})=>{
   await page.goto('/');await page.getByRole('button',{name:'卡牌圖鑑'}).click();

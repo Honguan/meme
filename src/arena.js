@@ -12,7 +12,7 @@ function imageFor(url) {
 export class Arena {
   constructor(canvas, game, onEnd, onUpdate) {
     this.canvas = canvas; this.ctx = canvas.getContext('2d'); this.game = game;
-    this.onEnd = onEnd; this.onUpdate = onUpdate; this.particles = []; this.running = false;
+    this.onEnd = onEnd; this.onUpdate = onUpdate; this.impacts = []; this.running = false;
     this.last = 0; this.accumulator = 0; this.frame = 0; this.reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
     const ratio = Math.min(devicePixelRatio || 1, 2);
     canvas.width = WIDTH * ratio; canvas.height = HEIGHT * ratio;
@@ -21,24 +21,41 @@ export class Arena {
   }
   start() {
     if (this.running) return;
-    this.running = true; this.accumulator = 0;
-    this.battle = createBattle(this.game, (x, y, a, b) => {
-      if (!this.reduced) for (let i = 0; i < 14; i++) this.particles.push({ x, y, dx: Math.cos(i) * 5, dy: Math.sin(i) * 5, life: 1, color: i % 2 ? '#d4f75b' : '#fb8aac' });
+    this.running = true; this.accumulator = 0; this.started = performance.now();
+    this.battle = createBattle(this.game, (x, y, a, b, report) => {
+      const at = performance.now();
+      this.impacts = this.impacts.filter(p => p.kind !== 'hit' && at - p.at < 850);
+      this.impacts.push({ kind: 'hit', x, y, tag: a.tag, secondTag: b.tag, at });
+      for (const change of report.changes) {
+        const previous = this.impacts.find(p => p.kind === 'result' && p.uid === change.uid);
+        this.impacts = this.impacts.filter(p => p !== previous);
+        this.impacts.push({ ...change, hp: change.hp + (previous?.hp || 0), shield: change.shield + (previous?.shield || 0), kind: 'result', at });
+      }
+      if (report.traps.length) this.impacts.push({ kind: 'trap', text: report.traps.join(' + '), at });
+      this.impacts = this.impacts.slice(-60);
+      this.hitStopUntil = this.reduced ? 0 : at + 65;
+      this.shakeUntil = this.reduced ? 0 : at + 180;
+      this.canvas.setAttribute('aria-label', `迷因對決：${report.changes.map(v => `${v.name}${v.ko ? ' 擊倒' : ''}${v.hp ? ` HP ${v.hp > 0 ? '+' : ''}${v.hp}` : ''}${v.shield ? ` 護盾 ${v.shield > 0 ? '+' : ''}${v.shield}` : ''}`).join('；')}`);
       this.onUpdate(a, b);
     });
   }
   animate(now) {
     const delta = Math.min(now - (this.last || now), 100); this.last = now;
-    if (this.running) {
+    if (this.running && !this.endingAt && now >= (this.hitStopUntil || 0)) {
       this.accumulator += delta;
       while (this.accumulator >= 1000 / 60) {
         this.accumulator -= 1000 / 60;
         if (this.battle.step()) {
-          this.running = false;
-          this.battle.dispose(); this.battle = null;
-          this.onEnd(); break;
+          // Keep the last positions until the final damage/KO presentation has finished.
+          this.endingAt = now + 850;
+          break;
         }
+        if (performance.now() < (this.hitStopUntil || 0)) { this.accumulator = 0; break; }
       }
+    }
+    if (this.endingAt && now >= this.endingAt) {
+      this.running = false; this.battle.dispose(); this.battle = null;
+      this.onEnd();
     }
     if (this.disposed) return;
     this.draw(now);
@@ -49,6 +66,8 @@ export class Arena {
     const palette = { grid: ['#171d1c','#556a55'], fine: ['#271f1b','#966446'], moon: ['#182027','#526b85'], backrooms: ['#292a21','#92905a'], xp: ['#182923','#478e71'] };
     const [bg, line] = palette[field] || palette.grid;
     c.clearRect(0, 0, WIDTH, HEIGHT); c.fillStyle = bg; c.fillRect(0, 0, WIDTH, HEIGHT);
+    c.save();
+    if (now < (this.shakeUntil || 0)) c.translate(Math.sin(now * .09) * 3, Math.cos(now * .11) * 2);
     c.strokeStyle = line; c.globalAlpha = .19; c.lineWidth = 1;
     const horizon = 105;
     for (let x = -1100; x <= 2200; x += 130) { c.beginPath(); c.moveTo(WIDTH / 2 + (x - WIDTH / 2) * .22, horizon); c.lineTo(x, HEIGHT); c.stroke(); }
@@ -92,13 +111,86 @@ export class Arena {
         const body = this.battle?.bodies.get(u.uid);
         const x = body?.position.x ?? (side ? WIDTH - 235 : 235) + (team.length > 1 ? index % 2 * (side ? -45 : 45) : 0);
         const y = body?.position.y ?? HEIGHT * (index + 1) / (team.length + 1);
+        if (body && !this.reduced && !this.endingAt) {
+          c.save(); c.strokeStyle = TAGS[u.tag].color; c.lineCap = 'round';
+          for (let i = 1; i <= 3; i++) {
+            c.globalAlpha = .25 / i; c.lineWidth = 16 / i;
+            c.beginPath(); c.moveTo(x - body.velocity.x * 6 * i, y - body.velocity.y * 6 * i); c.lineTo(x, y); c.stroke();
+          }
+          c.restore();
+        }
         this.drawUnit(u, x, y + (!this.running && !this.reduced ? Math.sin(now / 600 + index + side) * 4 : 0));
       });
     }
-    for (const p of this.particles) {
-      p.x += p.dx; p.y += p.dy; p.life -= .035; c.globalAlpha = Math.max(0, p.life); c.fillStyle = p.color; c.fillRect(p.x, p.y, 5, 5);
+    this.drawImpacts(now);
+    if (this.running && now - this.started < 650) this.caption('DUEL!', WIDTH / 2, HEIGHT / 2, '#d4f75b', 60);
+    c.restore();
+  }
+  caption(text, x, y, color, size = 28) {
+    const c = this.ctx;
+    c.font = `900 ${size}px Arial`; c.textAlign = 'center'; c.lineJoin = 'round';
+    c.strokeStyle = '#101313'; c.lineWidth = 7; c.strokeText(text, x, y, WIDTH - 80);
+    c.fillStyle = color; c.fillText(text, x, y, WIDTH - 80);
+  }
+  drawImpacts(now) {
+    const c = this.ctx;
+    this.impacts = this.impacts.filter(p => now - p.at < 850);
+    for (const p of this.impacts) {
+      const age = Math.max(0, (now - p.at) / 850), rise = this.reduced ? 0 : age * 12;
+      c.save(); c.globalAlpha = this.reduced ? 1 : Math.min(1, (1 - age) * 3);
+      if (p.kind === 'trap') {
+        this.caption(`陷阱連鎖：${p.text}`, WIDTH / 2, 70, '#c3aaff', 26);
+      } else if (p.kind === 'hit') {
+        if (!this.reduced) {
+          const radius = 22 + age * 125;
+          c.strokeStyle = TAGS[p.secondTag].color; c.lineWidth = 5 * (1 - age);
+          c.beginPath(); c.arc(p.x, p.y, radius, 0, Math.PI * 2); c.stroke();
+          c.strokeStyle = TAGS[p.tag].color; c.lineWidth = 3;
+          for (let i = 0; i < 12; i++) {
+            const angle = i * Math.PI / 6;
+            c.beginPath(); c.moveTo(p.x + Math.cos(angle) * radius, p.y + Math.sin(angle) * radius);
+            c.lineTo(p.x + Math.cos(angle) * (radius + 22), p.y + Math.sin(angle) * (radius + 22)); c.stroke();
+          }
+          this.drawMotif(p.tag, p.x, Math.max(100, p.y - 95), age);
+          if (p.secondTag !== p.tag) this.drawMotif(p.secondTag, p.x, Math.min(HEIGHT - 70, p.y + 95), age);
+        }
+      } else {
+        const lane = this.impacts.filter(v => v.kind === 'result' && v.side === p.side).indexOf(p);
+        const x = p.side ? WIDTH - 125 : 125, y = 150 + lane * 110;
+        this.caption(p.name.length > 14 ? `${p.name.slice(0, 13)}…` : p.name, x, y - 90 - rise, '#f2f5ed', 16);
+        if (p.hp) this.caption(`${p.hp > 0 ? '+' : ''}${p.hp} HP`, x, y - 60 - rise, p.hp > 0 ? '#76dec5' : '#ffb0ba');
+        if (p.shield) {
+          c.strokeStyle = '#8bdcff'; c.lineWidth = 5;
+          c.beginPath(); c.arc(p.x, p.y, 61 + (this.reduced ? 0 : age * 16), -.8, Math.PI * 1.7); c.stroke();
+          this.caption(`護盾 ${p.shield > 0 ? '+' : ''}${p.shield}`, x, y - 28 - rise, '#8bdcff', 22);
+        }
+        if (p.ko) {
+          this.caption('K.O.', x, y + 3 - rise, '#ffd278', 30);
+          if (!this.reduced) {
+            c.strokeStyle = '#ffd278'; c.lineWidth = 3;
+            const r = 52 + age * 55;
+            c.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
+          }
+        }
+      }
+      c.restore();
     }
-    this.particles = this.particles.filter(p => p.life > 0); c.globalAlpha = 1;
+  }
+  drawMotif(tag, x, y, age) {
+    const c = this.ctx;
+    c.save(); c.translate(x, y); c.rotate((age - .3) * .4);
+    c.fillStyle = TAGS[tag].color; c.strokeStyle = TAGS[tag].color; c.lineWidth = 4;
+    if (tag === 'wholesome') {
+      c.beginPath(); c.moveTo(0, 15); c.bezierCurveTo(-42, -10, -12, -39, 0, -17); c.bezierCurveTo(12, -39, 42, -10, 0, 15); c.fill();
+    } else if (tag === 'stonks') {
+      c.beginPath(); c.arc(0, 0, 22, 0, Math.PI * 2); c.stroke(); this.caption('$', 0, 10, TAGS[tag].color, 29);
+    } else if (tag === 'glitch') {
+      for (let i = 0; i < 4; i++) c.fillRect((i % 2 ? -1 : 1) * age * 20 - 28, i * 9 - 20, 56, 4);
+      this.caption('404', 0, 5, TAGS[tag].color, 25);
+    } else if (tag === 'chaos') {
+      c.beginPath(); c.moveTo(-22, 20); c.quadraticCurveTo(-32, -5, -7, -35); c.lineTo(0, -8); c.lineTo(18, -24); c.quadraticCurveTo(43, 22, -22, 20); c.fill();
+    } else this.caption(tag === 'bonk' ? 'BONK!' : 'BIG BRAIN', 0, 0, TAGS[tag].color, tag === 'bonk' ? 28 : 22);
+    c.restore();
   }
   drawUnit(u, x, y) {
     const c = this.ctx, color = u.side ? '#fb8aac' : '#d4f75b';
