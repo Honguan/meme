@@ -164,13 +164,28 @@ test('queue cancellation and expiry never become AI matches; absent peers forfei
   db.sql.close();
 });
 
+test('canonical maximum-length cards fit the request limit while oversized JSON never enters the queue',async()=>{
+  const db=database(),key=token(),prefix='https://example.com/';
+  const custom=Array.from({length:30},(_,i)=>({id:`custom-bound-${i}-`.padEnd(100,'x'),name:'\u0001'.repeat(72),type:'monster',tag:'bonk',cost:9,attack:99,hp:999,speed:12,image:prefix+'\u0000'.repeat(2048-prefix.length),flavor:'\u0001'.repeat(160),effects:Array.from({length:4},()=>({trigger:'round',action:'damage',target:'enemies',amount:99}))}));
+  const value={deck:custom.map(card=>card.id),custom,field:'grid'},raw=JSON.stringify(value),bytes=Buffer.byteLength(raw);
+  assert.equal(loadout(value).deck.length,30);assert.ok(bytes>400000&&bytes<500000);
+  try {
+    assert.equal((await call(db,key,'join',value)).status,'waiting');await call(db,key,'leave');
+    for(const size of [500001,500000]) {
+      const response=await matchRequest(new Request('http://localhost/api/match/join',{method:'POST',headers:{authorization:`Bearer ${key}`},body:raw+' '.repeat(size-bytes)}),db,100000);
+      assert.equal(response.status,size>500000?413:200);
+      assert.equal(db.sql.prepare('SELECT COUNT(*) AS count FROM match_tickets').get().count,size>500000?0:1);
+    }
+  } finally {db.sql.close();}
+});
+
 test('queue rejects invalid credentials, malformed and forged decks',async()=>{
   const db=database();
   assert.equal((await call(db,'wrong','join',payload())).status,401);
   assert.equal((await call(db,token(),'join',{...payload(),deck:Array(10).fill('__proto__')})).status,400);
   assert.equal((await call(db,token(),'join',{...payload(),deck:Array(10).fill(DEFAULT_DECK[0])})).status,400);
   assert.throws(()=>loadout({...payload(),custom:[{id:'bad',type:'bogus'}]}));
-  assert.equal((await call(db,token(),'join',{padding:'x'.repeat(100001)})).status,413);
+  assert.equal((await call(db,token(),'join',{padding:'x'.repeat(500001)})).status,413);
   db.sql.close();
 });
 

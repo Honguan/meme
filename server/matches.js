@@ -134,7 +134,7 @@ export async function matchRequest(request, db, now = Date.now()) {
       const chunks = [];
       if (request.body) for await (const chunk of request.body) {
         size += chunk.byteLength;
-        if (size > 100000) fail('卡組資料過大', 413);
+        if (size > 500000) fail('卡組資料過大', 413);
         chunks.push(chunk);
       }
       const raw = await new Blob(chunks).text();

@@ -91,6 +91,24 @@ async function leave(page) {
   }).catch(()=>{});
 }
 
+test('local UI matches complete custom decks whose UTF-8 payload exceeds 100 KB',async({page,browser,baseURL})=>{
+  test.skip(!['localhost','127.0.0.1','[::1]'].includes(new URL(baseURL).hostname),'Large synthetic decks run only against the local test database.');
+  const context=await browser.newContext({viewport:{width:390,height:844}}),peer=await context.newPage(),prefix='https://example.com/';
+  const custom=Array.from({length:30},(_,i)=>({id:`custom-utf8-${i}`,name:'迷'.repeat(72),type:'monster',tag:'bonk',cost:9,attack:99,hp:999,speed:12,image:prefix+'迷'.repeat(2048-prefix.length),flavor:'迷'.repeat(160),effects:Array.from({length:4},()=>({trigger:'round',action:'damage',target:'enemies',amount:99}))}));
+  const profile={version:1,custom,deck:custom.map(card=>card.id),web:[],decks:[],stats:{}};
+  try {
+    for(const player of [page,peer]) {
+      await player.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),profile);
+      await player.route('https://example.com/**',route=>route.abort());await player.goto(baseURL);
+    }
+    const request=page.waitForRequest('**/api/match/join');await join(page);
+    const sent=await request;expect(sent.postDataBuffer().length).toBeGreaterThan(100000);expect((await sent.response()).status()).toBe(200);
+    await join(peer);await expect(page.locator('#online-status')).toContainText('輪到你部署');await expect(peer.locator('#online-status')).toContainText('等待對手部署');
+    const first=await state(page),second=await state(peer);expect(first.id).toBe(second.id);expect(first.side).not.toBe(second.side);
+    expect(first.game.players[0].deck.length+first.game.players[0].hand.length+first.game.units.filter(unit=>unit.side===0).length).toBe(30);
+  } finally {await leave(page);await leave(peer);await context.close();}
+});
+
 test('two independent players match, deploy, replay the same battle and reconnect',async({browser})=>{
   test.setTimeout(60000);
   const a=await browser.newContext(),b=await browser.newContext({viewport:{width:390,height:844}});
