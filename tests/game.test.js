@@ -202,6 +202,32 @@ test('trap chain consumes once and applies before regular collision',()=>{
   collide(g,a,b);assert.equal(b.hp,5);assert.equal(a.hp,13);assert.equal(g.players[0].traps.length,0);
   collide(g,a,b);assert.equal(b.hp,3);assert.equal(g.players[0].discard.filter(id=>id==='reverse').length,1);
 });
+test('units knocked out before their hit trigger cannot attack, draw or gain hit energy',()=>{
+  for(const side of [0,1])for(const cause of ['trap','hit']) {
+    const g=setup(),other=1-side;
+    const lethal={trigger:'hit',action:'damage',amount:1,target:'enemy'};
+    const killer=summon(g,{...card('harold'),hp:20,attack:0,effects:cause==='hit'?[lethal]:[]},side);
+    const fallen=summon(g,{...card('drake'),hp:1,attack:0,effects:[
+      {trigger:'hit',action:'damage',amount:99,target:'enemies'},
+      {trigger:'hit',action:'draw',amount:1,target:'self'},
+      {trigger:'hit',action:'energy',amount:7,target:'self'},
+      {trigger:'death',action:'energy',amount:1,target:'self'}
+    ]},other);
+    g.players[other].deck=['doge'];
+    if(cause==='trap'){g.cards.lethalTrap={...card('reverse'),id:'lethalTrap',effects:[lethal]};g.players[side].traps=['lethalTrap'];}
+    collide(g,killer,fallen);
+    assert.equal(killer.hp,20);assert.equal(fallen.dead,true);assert.equal(fallen.hitUsed,false);
+    assert.deepEqual(g.players[other].hand,[]);assert.deepEqual(g.players[other].deck,['doge']);assert.equal(g.players[other].energy,10);
+    assert.equal(g.players[side].ko,1);assert.equal(g.players[other].ko,0);assert.equal(g.players[other].hp,18);
+    assert.equal(g.players[other].discard.filter(id=>id===fallen.id).length,1);
+    if(cause==='trap'){assert.deepEqual(g.players[side].traps,[]);assert.equal(g.players[side].discard.filter(id=>id==='lethalTrap').length,1);}
+    const settled=JSON.stringify(g);collide(g,killer,fallen);cleanup(g);assert.equal(JSON.stringify(g),settled);
+  }
+  const g=setup(),effects=[{trigger:'hit',action:'energy',amount:1,target:'self'},{trigger:'death',action:'energy',amount:2,target:'self'}];
+  const a=summon(g,{...card('harold'),hp:1,attack:1,effects},0),b=summon(g,{...card('drake'),hp:1,attack:1,effects},1);
+  collide(g,a,b);assert.equal(a.hitUsed,true);assert.equal(b.hitUsed,true);assert.equal(a.dead,true);assert.equal(b.dead,true);
+  assert.deepEqual(g.players.map(p=>p.energy),[12,12]);assert.deepEqual(g.players.map(p=>p.ko),[1,1]);
+});
 test('fusion consumes two same-tag units without counting them as knockouts',()=>{
   const g=setup();summon(g,card('doge'),0);g.players[0].hand=['fusion'];
   assert.equal(playCard(g,0,0).ok,false);summon(g,card('cat'),0);

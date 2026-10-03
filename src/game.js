@@ -181,7 +181,7 @@ export function collide(g, a, b) {
       p.discard.push(id);
       note(g, `陷阱連鎖：${card.name}`, 'combo');
     }
-    if (!u.hitUsed) {
+    if (u.hp > 0 && !u.hitUsed) {
       u.hitUsed = true; effects(g, u, u.side, 'hit', u, enemy.uid);
       if (u.hp > 0 && combos(g, u.side, 3).includes('bonk')) {
         damage(g, enemy, 3);
