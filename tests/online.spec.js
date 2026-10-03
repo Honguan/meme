@@ -94,6 +94,28 @@ async function leave(page) {
   }).catch(()=>{});
 }
 
+test('invalid active decks are rejected without silently matching a starter deck',async({page,baseURL})=>{
+  test.skip(!['localhost','127.0.0.1','[::1]'].includes(new URL(baseURL).hostname),'Deck rejection uses only the local test database.');
+  await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},{version:1,custom:[],deck:DEFAULT_DECK,web:[],stats:{}});
+  await page.goto('/');
+  const original=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));
+  let submitted,authorization;
+  await page.route('**/api/match/join',async route=>{submitted=route.request().postDataJSON();authorization=route.request().headers().authorization;await route.continue();});
+  try {
+    for(const [deck,error] of [[original.deck.slice(0,9),'卡組需為 10 至 30 張'],[['tape','imagination','stonks','handshake','reverse','safe','suit','fusion','tape','imagination'],'卡組需包含角色卡']]) {
+      await page.evaluate(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),{...original,deck});
+      await page.reload();const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+      await join(page);
+      await expect(page.locator('#toast')).toContainText(error);
+      await expect(page.getByRole('button',{name:'匹配對戰',exact:true})).toBeVisible();
+      expect(submitted.deck).toEqual(deck);
+      expect((await page.evaluate(async authorization=>(await fetch('/api/match/state',{headers:{authorization}})).json(),authorization)).status).toBe('idle');
+      expect(await page.evaluate(()=>sessionStorage.getItem('meme-clash-online'))).toBeNull();
+      expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+    }
+  } finally {await page.unroute('**/api/match/join');await leave(page);}
+});
+
 test('local UI matches complete custom decks whose UTF-8 payload exceeds 100 KB',async({page,browser,baseURL})=>{
   test.skip(!['localhost','127.0.0.1','[::1]'].includes(new URL(baseURL).hostname),'Large synthetic decks run only against the local test database.');
   const context=await browser.newContext({viewport:{width:390,height:844}}),peer=await context.newPage(),prefix='https://example.com/';

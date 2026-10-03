@@ -539,7 +539,7 @@ document.addEventListener('change', e=>{
 });
 document.addEventListener('submit', e=>{
   if(e.target.id==='online-form') {
-    e.preventDefault();const field=new FormData(e.target).get('field'),deck=validDeck();
+    e.preventDefault();const field=new FormData(e.target).get('field'),deck=profile.deck;
     const known=new Set(CATALOG.map(c=>c.id));
     online={status:'joining'};onlineBusy=true;counted=false;replayKey='';screen='battle';modal.close();render();
     void network.join({deck,field,custom:catalog.filter(c=>deck.includes(c.id)&&!known.has(c.id))}).catch(error=>{online=null;onlineBusy=false;render();toast(error.message);});return;
