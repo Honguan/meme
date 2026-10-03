@@ -1,5 +1,22 @@
 import { test, expect } from '@playwright/test';
 import { freshProfile } from '../src/storage.js';
+import { CATALOG } from '../src/catalog.js';
+
+test('deck-only updates reuse the derived catalog instead of cloning every web template',async({page})=>{
+  const profile=freshProfile();
+  profile.web=Array.from({length:1000},(_,i)=>({id:`catalog-cache-${i}`,name:`Dancing ${i}`,url:'https://example.com/template.png'}));
+  await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),profile);
+  await page.goto('/');await page.locator('[data-nav="collection"]').click();
+  await expect(page.locator('.results-heading')).toContainText(String(CATALOG.length+profile.web.length));
+  const clones=await page.evaluate(()=>{
+    const clone=window.structuredClone;let count=0;
+    window.structuredClone=(...args)=>{count++;return clone(...args);};
+    try {document.querySelector('[data-remove]').click();return count;}
+    finally {window.structuredClone=clone;}
+  });
+  expect(clones).toBe(0);await expect(page.locator('.deck-count')).toContainText(String(profile.deck.length-1));
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).web.length)).toBe(1000);
+});
 
 test('saved deck workshop saves, switches, overwrites, reloads, exports and deletes independently',async({page})=>{
   await page.goto('/');await page.locator('[data-nav="workshop"]').click();

@@ -11,15 +11,27 @@ function database() {
   sql.exec(readFileSync(new URL('../drizzle/0000_matchmaking.sql', import.meta.url), 'utf8'));
   return { sql, prepare(query) { return { bind(...args) {
     const s = sql.prepare(query);
-    return { first: async () => s.get(...args) || null, run: async () => ({ meta: { changes: s.run(...args).changes } }) };
+    return { first: async () => s.get(...args) || null, run: () => ({ meta: { changes: s.run(...args).changes } }) };
   } }; }, async batch(statements) {
     sql.exec('BEGIN');
-    try { const result=[];for(const s of statements)result.push(await s.run());sql.exec('COMMIT');return result; }
+    try { const result=[];for(const s of statements)result.push(s.run());sql.exec('COMMIT');return result; }
     catch(error){sql.exec('ROLLBACK');throw error;}
   } };
 }
 const token = () => `${crypto.randomUUID()}-${crypto.randomUUID()}`;
 const payload = () => ({ deck: DEFAULT_DECK, custom: [], field: 'moon' });
+
+test('D1 adapter serializes atomic batches and rolls back every statement on failure',async()=>{
+  const db=database();
+  const insert=id=>db.prepare('INSERT INTO match_tickets (id,joined,seen,loadout) VALUES (?,0,0,?)').bind(id,'{}');
+  try {
+    await Promise.all([db.batch([insert('first')]),db.batch([insert('second')])]);
+    assert.equal(db.sql.prepare('SELECT COUNT(*) AS count FROM match_tickets').get().count,2);
+    await assert.rejects(db.batch([insert('rolled-back'),insert('first')]));
+    assert.equal(db.sql.prepare('SELECT COUNT(*) AS count FROM match_tickets').get().count,2);
+  } finally { db.sql.close(); }
+});
+
 async function call(db, key, action='state', data={}, now=100000) {
   const response = await matchRequest(new Request(`http://localhost/api/match/${action}`, {
     method:action==='state'?'GET':'POST',headers:{authorization:`Bearer ${key}`},
@@ -27,6 +39,56 @@ async function call(db, key, action='state', data={}, now=100000) {
   }), db, now);
   return { status: response.status, ...await response.json() };
 }
+
+test('simultaneous queue joins assign every player to exactly one two-player match',async()=>{
+  const db=database(),keys=Array.from({length:8},token);
+  try {
+    const joined=await Promise.all(keys.map(key=>call(db,key,'join',payload())));
+    assert.ok(joined.every(result=>result.status==='waiting'||result.status==='matched'));
+    let states;
+    for(let attempt=0;attempt<keys.length/2;attempt++) {
+      states=await Promise.all(keys.map(key=>call(db,key)));
+      if(states.every(state=>state.status==='matched'))break;
+    }
+    assert.ok(states.every(state=>state.status==='matched'));
+    const pairs=new Map();
+    for(const state of states) {
+      const sides=pairs.get(state.id)||[];sides.push(state.side);pairs.set(state.id,sides);
+    }
+    assert.equal(pairs.size,4);
+    for(const sides of pairs.values())assert.deepEqual(sides.sort(),[0,1]);
+    const rows=db.sql.prepare('SELECT peer0,peer1 FROM matches').all();
+    assert.equal(rows.length,4);assert.equal(new Set(rows.flatMap(row=>[row.peer0,row.peer1])).size,8);
+    const tickets=db.sql.prepare('SELECT match_id,COUNT(*) AS count FROM match_tickets GROUP BY match_id').all();
+    assert.equal(tickets.length,4);assert.ok(tickets.every(ticket=>ticket.match_id&&ticket.count===2));
+  } finally { db.sql.close(); }
+});
+
+test('cancelling a candidate after selection prevents stale pairing and phantom matches',async()=>{
+  const db=database(),a=token(),b=token();
+  await call(db,a,'join',payload());
+  let selected,resume;
+  const selection=new Promise(resolve=>selected=resolve),continued=new Promise(resolve=>resume=resolve);
+  const prepare=db.prepare;
+  db.prepare=query=>{
+    const statement=prepare(query);
+    if(!query.startsWith('SELECT * FROM match_tickets WHERE match_id IS NULL'))return statement;
+    return {bind(...args){
+      const bound=statement.bind(...args),first=bound.first;
+      bound.first=async()=>{const row=await first();selected();await continued;return row;};
+      return bound;
+    }};
+  };
+  const joining=call(db,b,'join',payload());
+  try {
+    await selection;
+    assert.equal((await call(db,a,'leave')).status,'idle');
+    resume();assert.equal((await joining).status,'waiting');
+    assert.equal(db.sql.prepare('SELECT COUNT(*) AS count FROM matches').get().count,0);
+    assert.equal(db.sql.prepare('SELECT COUNT(*) AS count FROM match_tickets').get().count,1);
+    assert.equal((await call(db,b)).status,'waiting');
+  } finally {resume();await joining;db.sql.close();}
+});
 
 test('concurrent commands commit one version and rejected targets leave authoritative state unchanged',async()=>{
   const db=database(),a=token(),b=token();

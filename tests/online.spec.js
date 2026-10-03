@@ -1,4 +1,45 @@
 import { test, expect } from '@playwright/test';
+import { DEFAULT_DECK } from '../src/catalog.js';
+
+test('local D1 handles simultaneous queues, duplicate commands and cancellation without orphan players',async({page,baseURL})=>{
+  test.skip(!['localhost','127.0.0.1','[::1]'].includes(new URL(baseURL).hostname),'Queue bursts run only against the local test database.');
+  await page.goto('/');
+  const result=await page.evaluate(async deck=>{
+    const keys=Array.from({length:10},()=>`${crypto.randomUUID()}-${crypto.randomUUID()}`);
+    const call=async(key,action='state',data={})=>{
+      const response=await fetch(`/api/match/${action}`,{method:action==='state'?'GET':'POST',
+        headers:{authorization:`Bearer ${key}`,'content-type':'application/json'},
+        ...(action==='state'?{}:{body:JSON.stringify(data)})});
+      return {http:response.status,...await response.json()};
+    };
+    const loadout={deck,custom:[],field:'grid'};
+    try {
+      const joined=await Promise.all(keys.slice(0,8).map(key=>call(key,'join',loadout)));
+      let states;
+      for(let attempt=0;attempt<4;attempt++) {
+        states=await Promise.all(keys.slice(0,8).map(key=>call(key)));
+        if(states.every(state=>state.status==='matched'))break;
+      }
+      const active=states.findIndex(state=>state.status==='matched'&&state.side===state.turn);
+      const commands=active<0?[]:await Promise.all([0,1].map(()=>call(keys[active],'ready',{version:states[active].version})));
+      await Promise.all(keys.slice(0,8).map(key=>call(key,'leave')));
+      await call(keys[8],'join',loadout);
+      const race=await Promise.all([call(keys[9],'join',loadout),call(keys[8],'leave')]);
+      return {joined,states,commands,race,cancelled:await call(keys[8]),remaining:await call(keys[9])};
+    } finally {await Promise.all(keys.map(key=>call(key,'leave')));}
+  },DEFAULT_DECK);
+  expect(result.joined.every(state=>state.http===200&&['waiting','matched'].includes(state.status))).toBeTruthy();
+  expect(result.states.every(state=>state.http===200&&state.status==='matched')).toBeTruthy();
+  const pairs=new Map();
+  for(const state of result.states){const sides=pairs.get(state.id)||[];sides.push(state.side);pairs.set(state.id,sides);}
+  expect(pairs.size).toBe(4);for(const sides of pairs.values())expect(sides.sort()).toEqual([0,1]);
+  expect(result.commands.map(state=>state.http).sort()).toEqual([200,409]);
+  expect(result.race.every(state=>state.http===200)).toBeTruthy();
+  expect(result.cancelled.status).toBe('idle');expect(result.remaining.http).toBe(200);
+  if(result.remaining.status==='matched') {
+    expect(result.remaining.game.phase).toBe('over');expect(result.remaining.game.winner).toBe(result.remaining.side);
+  } else expect(result.remaining.status).toBe('waiting');
+});
 
 async function prepare(page) {
   const custom=Array.from({length:10},(_,i)=>({id:`custom-online-${i}`,name:`線上測試 ${i}`,type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'',effects:[]}));

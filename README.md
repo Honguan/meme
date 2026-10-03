@@ -128,6 +128,10 @@ npm run test:browser
 
 Windows 瀏覽器測試使用已安裝的 Microsoft Edge；Linux 使用 Playwright Chromium，先執行 `npx playwright install --with-deps chromium`。可用環境變數 `TEST_BASE_URL` 對已部署網站執行同一套瀏覽器測試。
 
+併發佇列測試只對本機 Worker 的 D1 執行，不會向公開佇列批次送入測試玩家；涵蓋多人配對、同版本重複操作與取消競態。規則測試的 SQLite 替身也驗證交易原子性與失敗回滾。
+
+正式前端將全球卡庫拆成獨立 `world-catalog` 資料檔，介面修改不會使該檔的快取失效；首次開局仍會載入完整卡庫。單純修改卡組或統計時不重建卡庫，自訂卡、匯入或網路模板更新時才重新計算。
+
 ## 專案結構
 
 - `src/catalog.js`：卡牌、場地、效果資料與匯入驗證。

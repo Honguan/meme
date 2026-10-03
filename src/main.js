@@ -88,7 +88,7 @@ async function onlineCommand(action,data={}) {
 function matchmakingDialog() {
   openDialog(`<div class="dialog-heading"><h2>線上匹配</h2><p>自由卡組 · 20 LP · 每次部署 90 秒</p><p>自訂卡可參戰；場地採先進入佇列的玩家設定。</p></div><form id="online-form"><label>場地<select name="field">${FIELDS.map(f=>`<option value="${f.id}" ${game.field===f.id?'selected':''}>${f.name}</option>`).join('')}</select></label><p class="form-error" id="online-error" role="alert"></p><button class="primary-button" type="submit">${icon('swords')} 開始匹配</button></form>`,'small-modal');
 }
-function persist(next = profile) { try { saveProfile(next); profile = next; catalog = collect(); return true; } catch { toast('瀏覽器儲存空間不足，請匯出卡組備份'); return false; } }
+function persist(next = profile) { try { saveProfile(next); const changed=next.custom!==profile.custom||next.web!==profile.web; profile=next; if(changed)catalog=collect(); return true; } catch { toast('瀏覽器儲存空間不足，請匯出卡組備份'); return false; } }
 function saveDeck() {
   const name = $('#deck-name').value.trim();
   if (!name || name.length > 48) return toast('卡組名稱需為 1 至 48 字');
