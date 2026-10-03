@@ -148,7 +148,7 @@ function sound(kind = 'click') {
     o.start(); o.stop(audio.currentTime + .15);
   } catch { mute = true; }
 }
-function image(card, extra = '') { return card.image ? `<img src="${esc(card.image)}" alt="${esc(card.name)}" loading="lazy" referrerpolicy="no-referrer" ${extra}>` : `<span class="art-fallback">${esc(card.name.slice(0, 2))}</span>`; }
+function image(card, extra = '') { return card.image ? `<img data-card-art src="${esc(card.image)}" alt="${esc(card.name)}" loading="lazy" referrerpolicy="no-referrer" ${extra}>` : `<span class="art-fallback" role="img" aria-label="${esc(card.name)}" data-original>${esc(card.name.slice(0, 2))}</span>`; }
 function cardHTML(card, index = null) {
   const inHand = index !== null, num = profile.deck.filter(id => id === card.id).length;
   return `<button class="meme-card type-${card.type}" style="--tag:${TAGS[card.tag].color}" data-${inHand ? 'hand' : 'card'}="${inHand ? index : esc(card.id)}" aria-label="${esc(card.name)}，${tr(TYPES[card.type])}，${card.cost} ${tr('能量')}">
@@ -392,6 +392,10 @@ function queueHoverPreview(button) {
     button.setAttribute('aria-describedby',hoverPreview.id);stopHoverPreview=mountPreview(hoverPreview,card);
   },350);
 }
+document.addEventListener('error',e=>{
+  if(!e.target.matches?.('img[data-card-art]'))return;
+  const fallback=document.createElement('span');fallback.className='art-fallback';fallback.dataset.original='';fallback.setAttribute('role','img');fallback.setAttribute('aria-label',e.target.alt);fallback.textContent=e.target.alt.slice(0,2);e.target.replaceWith(fallback);
+},true);
 document.addEventListener('pointerover',e=>{if(e.pointerType!=='touch')queueHoverPreview(e.target.closest('.meme-card'));});
 document.addEventListener('pointerout',e=>{if(hoverCard&&hoverCard.contains(e.target)&&!hoverCard.contains(e.relatedTarget))hideHoverPreview();});
 document.addEventListener('focusin',e=>queueHoverPreview(e.target.closest('.meme-card')));

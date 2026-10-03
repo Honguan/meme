@@ -6,6 +6,7 @@
 .duel-scoreboard{display:contents}.duel-scoreboard .player-hud{position:absolute;top:0;left:0;width:100%;height:52px;gap:12px;border-left:3px solid var(--pink);padding:0 10px;background:#ffffff06}
 .duel-scoreboard .player-hud:last-child{top:auto;bottom:0;position:relative;border-color:var(--accent);display:none}
 .duelist-avatar{display:block;width:46px;height:46px;overflow:hidden;flex-shrink:0;background:var(--surface);border:1px solid var(--line)}
+.duelist-avatar>.art-fallback{min-height:0;font-size:14px}.board-slot>.art-fallback{height:65px;min-height:0;font-size:24px;pointer-events:none}
 .duelist-avatar img{width:100%;height:100%;object-fit:cover}.duelist-avatar>svg{margin:10px}.duel-scoreboard .player-info{flex:1}.duel-scoreboard .player-info>b{font-size:13px}.duel-scoreboard .life{display:flex;gap:8px;align-items:baseline;margin-left:auto}.duel-scoreboard .life b{font-size:30px}.duel-scoreboard .life-track{height:3px;max-width:200px}
 .duel-round{height:32px;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--muted)}.duel-round b{font:700 19px Arial;color:var(--accent);margin-left:8px}#phase-chip{color:var(--accent)}
 .duel-board{position:relative;height:410px;background:#333c38 url('/art/memeverse-arena.png') center/cover;border-top:1px solid #869583;border-bottom:1px solid #869583;isolation:isolate}
@@ -40,6 +41,7 @@
 .duel-scoreboard .player-hud:last-child{display:flex;position:static;grid-area:self;margin-top:6px}
 .duel-round{grid-area:round}.duel-board{grid-area:board}.duel-actions{grid-area:actions}.duel-table .hand-section{grid-area:hand}
 @media(min-width:741px){.unit-slots{grid-template-columns:repeat(3,minmax(0,1fr));width:min(65%,430px);gap:16px}.board-slot{width:100%;height:134px}.board-slot>img{height:92px}.board-unit-name{font-size:10px}.board-stats{font-size:12px}.formation{gap:20px}}
+@media(min-width:741px){.board-slot>.art-fallback{height:92px}}
 @media(max-width:740px){.card-inspector:has(.cancel-selection){position:fixed;top:auto;bottom:0;left:0;z-index:25;width:100%;padding:12px 16px;background:#171d1afa;border-top:1px solid var(--accent);max-height:30dvh;overflow:auto;box-shadow:0 -8px 30px #0005}.card-dragging .card-inspector{visibility:hidden}}
 .online-status { display:flex;justify-content:space-between;gap:12px;padding:12px 0;margin-bottom:12px;border-bottom:1px solid var(--accent);color:var(--accent);font-size:14px; }
 .online-status small { color:var(--muted); }

@@ -171,7 +171,7 @@ export function playCard(g, side, index, targetId, slot) {
   return { ok: true };
 }
 export function collide(g, a, b) {
-  if (a.side === b.side || a.hp <= 0 || b.hp <= 0) return;
+  if (g.phase === 'over' || a.side === b.side || a.hp <= 0 || b.hp <= 0) return;
   g.collisions++;
   for (const [u, enemy] of [[a, b], [b, a]]) {
     const p = g.players[u.side];
@@ -194,7 +194,7 @@ export function collide(g, a, b) {
     const pa = power(a), pb = power(b);
     damage(g, a, pb); damage(g, b, pa);
   }
-  cleanup(g);
+  cleanup(g);checkWinner(g);
 }
 export function planAI(g) {
   const side = 1, p = g.players[side];
@@ -210,6 +210,7 @@ export function planAI(g) {
   g.active = 0;
 }
 export function finishRound(g) {
+  if (g.phase === 'over') return;
   cleanup(g);
   for (let side = 0; side < 2; side++) {
     if (!units(g, side).length) {

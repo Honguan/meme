@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import Matter from 'matter-js';
 import { CATALOG, CORE, TAGS, validateCustom, templateCards, DEFAULT_DECK } from '../src/catalog.js';
 import { createGame, createDailyGame, randomWorldDeck, playCard, summon, collide, cleanup, finishRound, planAI, checkWinner, combos, draw, units } from '../src/game.js';
 import { previewGame } from '../src/preview.js';
@@ -265,6 +266,30 @@ test('all victory goals work, including simultaneous draw and endless sandbox',(
   const sand=setup();sand.goal='sandbox';sand.players[0].hp=0;sand.players[0].energy=0;sand.players[0].hand=['doge'];
   assert.equal(playCard(sand,0,0).ok,true);checkWinner(sand);assert.equal(sand.winner,null);
 });
+test('collision victories resolve immediately and later collisions or rounds cannot change the result',()=>{
+  for(const goal of ['classic','knockout']){
+    const g=setup();g.goal=goal;g.phase='battle';g.round=10;g.players.forEach(p=>p.ko=4);g.players[0].hp=1;g.players[1].hp=2;
+    const base={...card('doge'),effects:[],attack:20,hp:100};
+    const attacker=summon(g,base,0,0),victim=summon(g,{...base,attack:0,hp:1},1,0);
+    const laterVictim=summon(g,{...base,attack:0,hp:1},0,1),laterAttacker=summon(g,base,1,1);
+    collide(g,attacker,victim);assert.equal(g.phase,'over');assert.equal(g.winner,0);
+    const ended=JSON.stringify(g);collide(g,laterVictim,laterAttacker);finishRound(g);finishRound(g);assert.equal(JSON.stringify(g),ended);
+    const tie=setup();tie.goal=goal;tie.phase='battle';tie.players.forEach(p=>{p.ko=4;p.hp=2;});
+    collide(tie,summon(tie,{...base,hp:1},0),summon(tie,{...base,hp:1},1));assert.equal(tie.phase,'over');assert.equal(tie.winner,'draw');
+  }
+});
+
+test('Matter.js stops remaining same-tick contacts after a decisive knockout',()=>{
+  const g=setup();g.goal='knockout';g.phase='battle';g.players.forEach(p=>p.ko=4);
+  const base={...card('doge'),effects:[],attack:20,hp:100};
+  const team=[summon(g,base,0,0),summon(g,{...base,attack:0,hp:1},1,0),summon(g,{...base,attack:0,hp:1},0,1),summon(g,base,1,1)];
+  const reports=[],sim=createBattle(g,(...args)=>reports.push(args));
+  for(let i=0;i<team.length;i++){const body=sim.bodies.get(team[i].uid);Matter.Body.setPosition(body,{x:500+(i%2)*30,y:i<2?120:350});Matter.Body.setVelocity(body,{x:0,y:0});}
+  assert.equal(sim.step(),true);assert.equal(g.phase,'over');assert.equal(g.collisions,1);assert.equal(reports.length,1);assert.deepEqual(g.players.map(p=>p.ko).sort(),[4,5]);
+  const ended=JSON.stringify(g),positions=[...sim.bodies.values()].map(b=>({...b.position}));assert.equal(sim.step(),true);finishRound(g);
+  assert.equal(JSON.stringify(g),ended);assert.deepEqual([...sim.bodies.values()].map(b=>b.position),positions);sim.dispose();
+});
+
 test('Matter.js produces genuine opposing-body contacts and bounded rounds',()=>{
   const g=setup();summon(g,card('doge'),0);summon(g,card('kermit'),1);g.phase='battle';
   const sim=createBattle(g);let ticks=0;while(!sim.step()&&ticks++<400){}sim.dispose();

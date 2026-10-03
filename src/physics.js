@@ -24,6 +24,7 @@ export function createBattle(game, onImpact = () => {}) {
   }
   Events.on(engine, 'collisionStart', ({ pairs }) => {
     for (const { bodyA, bodyB } of pairs) {
+      if (game.phase === 'over') break;
       const a = game.units.find(u => u.uid === bodyA.label), b = game.units.find(u => u.uid === bodyB.label);
       if (!a || !b || a.side === b.side || a.dead || b.dead) continue;
       const key = [a.uid, b.uid].sort().join(':');
@@ -44,6 +45,7 @@ export function createBattle(game, onImpact = () => {}) {
   return {
     bodies,
     step() {
+      if (game.phase === 'over') return true;
       tick++;
       for (const unit of game.units) {
         const body = bodies.get(unit.uid);
@@ -59,7 +61,7 @@ export function createBattle(game, onImpact = () => {}) {
         if (body.speed > speed * 1.5) Body.setVelocity(body, { x: body.velocity.x / body.speed * speed, y: body.velocity.y / body.speed * speed });
       }
       Engine.update(engine, 1000 / 60);
-      return tick >= 300 || !units(game, 0).length || !units(game, 1).length;
+      return game.phase === 'over' || tick >= 300 || !units(game, 0).length || !units(game, 1).length;
     },
     dispose() { Events.off(engine); Composite.clear(engine.world, false); Engine.clear(engine); },
   };
