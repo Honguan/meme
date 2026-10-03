@@ -152,7 +152,7 @@ npm run build
 npm run test:browser
 ```
 
-Windows 瀏覽器測試使用已安裝的 Microsoft Edge；Linux 使用 Playwright Chromium，先執行 `npx playwright install --with-deps chromium`。可用環境變數 `TEST_BASE_URL` 對已部署網站執行同一套瀏覽器測試。
+瀏覽器測試包含 Chromium 與 WebKit 兩個專案。Windows 的 Chromium 專案使用已安裝的 Microsoft Edge，另執行 `npx playwright install webkit`；Linux 先執行 `npx playwright install --with-deps chromium webkit`。`npm run test:browser` 執行兩個專案，或加上 `-- --project=chromium`／`-- --project=webkit` 單獨執行。CI 分開驗證兩個引擎，失敗附件按引擎命名。原生觸控拖曳測試依賴 Chromium CDP，因此 WebKit 僅略過這一項，不能視為真實 iOS 觸控已驗證。可用環境變數 `TEST_BASE_URL` 對已部署網站執行同一套瀏覽器測試。
 
 併發佇列測試只對本機 Worker 的 D1 執行，不會向公開佇列批次送入測試玩家；涵蓋多人配對、同版本重複操作、取消競態與雙方同時退出已終局對局。規則測試的 SQLite 替身也驗證交易原子性與失敗回滾。瀏覽器測試驗證終局戰績儲存失敗時，記憶體、匯出備份與原存檔保持相同統計，後續對局正常計算一次。
 

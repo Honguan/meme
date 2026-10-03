@@ -700,7 +700,8 @@ test('targeted spell drops damage the chosen enemy and refuse an ally',async({pa
   await dragCard(page,hand.first(),enemy);await expect(hand).toHaveCount(4);
   await expect(enemy.locator('.board-stats b').nth(1)).toHaveText(String(hp-3));
 });
-test('touch drag deploys without scrolling the page, and touch cancellation spends nothing',async({page})=>{
+test('touch drag deploys without scrolling the page, and touch cancellation spends nothing',async({page,browserName})=>{
+  test.skip(browserName!=='chromium','Native touch movement requires Chromium CDP; WebKit touch is not verified here.');
   await page.setViewportSize({width:390,height:844});await dragDeck(page);
   const hand=page.locator('.hand-cards [data-hand]'),target=page.locator('.own-formation [data-slot="1"]');
   await dragCard(page,hand.first(),target,{touch:true,cancel:true});await expect(hand).toHaveCount(5);
@@ -746,7 +747,8 @@ test('dialogs use their current localized heading as an accessible name',async({
     await expect(page.locator('[data-action="appearance"]')).toBeFocused();
     await page.locator('[data-action="appearance"]').click();
     const theme=width===1440?'coral':'ice';
-    await page.locator(`[name="theme"][value="${theme}"]`).check();
+    await page.locator(`[name="theme"][value="${theme}"]`).focus();await page.keyboard.press('Space');
+    await expect(page.locator(`[name="theme"][value="${theme}"]`)).toBeChecked();
     await expect(page.locator(`[name="theme"][value="${theme}"]`)).toBeFocused();
     await page.locator('#modal [data-action="close"]').click();
     await expect(page.locator('[data-action="appearance"]')).toBeFocused();
