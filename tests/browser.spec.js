@@ -588,6 +588,57 @@ test('saved deck and import quota failures preserve stored and live data until s
   await page.locator('#confirm-import').click();await expect(page.locator('dialog')).toBeHidden();await expect(page.locator('.deck-list')).toContainText('匯入專用卡');
 });
 
+test('favorites persist through backup import and deletion without changing decks or previews',async({page},testInfo)=>{
+  const profile=freshProfile(),card={id:'custom-favorite',name:'生命收藏測試',type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'',effects:[]};profile.custom=[card];
+  await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);
+  await page.goto('/');await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');await page.locator(`[data-card="${card.id}"]`).click();
+  const toggle=page.locator(`[data-favorite="${card.id}"]`);await expect(toggle).toHaveAttribute('aria-pressed','false');
+  await page.getByRole('button',{name:'播放效果演示',exact:true}).click();const canvas=await page.locator('#modal-preview-stage canvas').elementHandle();
+  await toggle.focus();await page.keyboard.press('Space');await expect(toggle).toBeFocused();await expect(toggle).toHaveAttribute('aria-pressed','true');expect(await canvas.evaluate(el=>el.isConnected)).toBe(true);
+  const saved=parseProfile(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1'))));expect(saved.favorites).toEqual([card.id]);expect(saved.deck).toEqual(profile.deck);expect(saved.stats).toEqual(profile.stats);
+  await page.getByRole('button',{name:'關閉',exact:true}).click();await page.getByLabel('只看收藏',{exact:true}).check();await expect(page.locator('.catalog-grid .meme-card')).toHaveCount(1);await expect(page.locator('.favorite-mark')).toHaveCount(1);
+  await page.getByRole('searchbox',{name:'搜尋卡牌'}).fill('找不到');await expect(page.locator('.catalog-grid .meme-card')).toHaveCount(0);await page.getByRole('searchbox',{name:'搜尋卡牌'}).fill('');
+  for(const width of [1440,390]){await page.setViewportSize({width,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.locator(`[data-card="${card.id}"]`).click();await expect(toggle).toHaveAttribute('aria-pressed','true');await page.screenshot({path:testInfo.outputPath(`favorite-${width}.png`)});await page.getByRole('button',{name:'關閉',exact:true}).click();}
+  await page.locator('[data-nav="workshop"]').click();const download=page.waitForEvent('download');await page.getByRole('button',{name:'匯出',exact:true}).click();const stream=await (await download).createReadStream(),chunks=[];for await(const chunk of stream)chunks.push(chunk);const backup=Buffer.concat(chunks);expect(JSON.parse(backup.toString()).favorites).toEqual([card.id]);
+  const incoming={...saved,favorites:[]},importFile=async data=>{const chooser=page.waitForEvent('filechooser');await page.locator('[data-action="import"]').click();await (await chooser).setFiles({name:'favorites.json',mimeType:'application/json',buffer:data});await page.locator('#confirm-import').click();};
+  await importFile(Buffer.from(JSON.stringify(incoming)));expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).favorites)).toEqual([]);await importFile(backup);
+  await page.reload();await page.locator('[data-nav="collection"]').click();await page.getByLabel('只看收藏',{exact:true}).check();await expect(page.locator(`[data-card="${card.id}"]`)).toBeVisible();await page.locator(`[data-card="${card.id}"]`).click();await toggle.click();await expect(toggle).toHaveAttribute('aria-pressed','false');await toggle.click();await expect(toggle).toHaveAttribute('aria-pressed','true');
+  await page.locator(`[data-delete="${card.id}"]`).click();await page.locator('#confirm-delete').click();const deleted=parseProfile(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1'))));expect(deleted.favorites).toEqual([]);expect(deleted.deck).toEqual(profile.deck);await expect(page.locator('.catalog-grid .meme-card')).toHaveCount(0);
+});
+
+test('favorite toggles keep hand selections and localized authored names intact',async({page})=>{
+  await dragDeck(page);await page.locator('.hand-cards [data-hand]').first().click();await page.locator('[data-action="inspect"]').click();
+  const target=page.locator('#play-target'),options=await target.locator('option').count();if(options>1)await target.selectOption({index:options-1});const value=await target.inputValue();
+  const toggle=page.locator('[data-favorite]');await toggle.click();await expect(target).toHaveValue(value);await expect(page.locator('.hand-cards [data-hand]').first()).toHaveAttribute('aria-pressed','true');await expect(page.locator('.energy-box strong')).toHaveText('3/ 3');await expect(page.locator('.hand-cards [data-hand]')).toHaveCount(5);
+  const id=await toggle.getAttribute('data-favorite'),name=await page.locator('#dialog-title').textContent();await page.getByRole('button',{name:'關閉',exact:true}).click();
+  for(const [locale,label,filter] of [['en','Remove favorite','Favorites only'],['ja','お気に入りから削除','お気に入りのみ'],['es','Quitar de favoritos','Solo favoritos'],['zh-Hant','取消收藏','只看收藏']]){
+    await page.locator('[data-action="appearance"]').click();await page.locator('#interface-language').selectOption(locale);await page.keyboard.press('Escape');
+    await page.locator('[data-nav="collection"]').click();await page.getByLabel(filter,{exact:true}).check();await page.locator(`[data-card="${id}"]`).click();await expect(page.locator('#dialog-title')).toHaveText(name);await expect(page.getByRole('button',{name:label,exact:true})).toHaveAttribute('aria-pressed','true');await page.keyboard.press('Escape');
+  }
+});
+
+test('favorites reject quota and stale-tab writes without optimistic state changes',async({page})=>{
+  await page.goto('/');await page.locator('[data-nav="collection"]').click();const id=CATALOG[0].id;await page.locator(`[data-card="${id}"]`).click();
+  const toggle=page.locator(`[data-favorite="${id}"]`),saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  await page.evaluate(()=>{window.storageFails=true;const setItem=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){if(key==='meme-clash-v1'&&window.storageFails)throw new DOMException('Quota exceeded','QuotaExceededError');return setItem.call(this,key,value);};});
+  await toggle.click();await expect(page.locator('#toast')).toContainText('瀏覽器儲存空間不足');await expect(toggle).toHaveAttribute('aria-pressed','false');expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+  await page.evaluate(()=>window.storageFails=false);await toggle.click();await expect(toggle).toHaveAttribute('aria-pressed','true');
+  const external=await page.evaluate(()=>{const p=JSON.parse(localStorage.getItem('meme-clash-v1'));p.stats.games=42;const raw=JSON.stringify(p);localStorage.setItem('meme-clash-v1',raw);return raw;});
+  await toggle.click();await expect(page.locator('#toast')).toContainText('其他分頁更新');await expect(toggle).toHaveAttribute('aria-pressed','true');expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(external);
+});
+
+test('fully favorited web caches retain overrides without exceeding the template limit',async({page})=>{
+  const profile=freshProfile(),[cached,uncached]=CATALOG.filter(c=>c.origin==='網路');
+  profile.web=[...Array.from({length:999},(_,i)=>({id:`favorite-${i}`,name:`Favorite ${i}`,url:'https://i.imgflip.com/favorite.jpg'})),{id:cached.id.slice(4),name:'Cached override',url:'https://i.imgflip.com/cached.jpg'}];
+  profile.favorites=[...profile.web.map(m=>`web-${m.id}`),uncached.id];
+  await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);
+  await page.route('https://api.imgflip.com/get_memes',route=>route.fulfill({json:{success:true,data:{memes:[{id:cached.id.slice(4),name:'Refreshed override',url:'https://i.imgflip.com/refreshed.jpg'},{id:uncached.id.slice(4),name:'New static cache',url:'https://i.imgflip.com/new-static.jpg'}]}}}));
+  await page.goto('/');await page.locator('[data-nav="collection"]').click();await page.getByRole('button',{name:'更新網路卡庫',exact:true}).click();await expect(page.locator('#toast')).toContainText('已更新 2 個模板');
+  const raw=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1'))),saved=parseProfile(raw);expect(raw.web).toHaveLength(1000);expect(saved.favorites).toEqual(profile.favorites);expect(saved.web.find(m=>`web-${m.id}`===cached.id).name).toBe('Refreshed override');expect(saved.web.some(m=>`web-${m.id}`===uncached.id)).toBe(false);
+  await page.reload();await page.locator('[data-nav="collection"]').click();await page.getByLabel('只看收藏',{exact:true}).check();await page.getByRole('searchbox',{name:'搜尋卡牌'}).fill('Refreshed override');await expect(page.locator(`[data-card="${cached.id}"]`)).toBeVisible();
+  await page.getByRole('searchbox',{name:'搜尋卡牌'}).fill(uncached.name);await expect(page.locator(`[data-card="${uncached.id}"]`)).toBeVisible();
+});
+
 test('refreshing a full web library preserves active and saved deck references across reload',async({page})=>{
   const profile=freshProfile();profile.web=Array.from({length:1000},(_,i)=>({id:`workshop-${i}`,name:`Web card ${i}`,url:`https://i.imgflip.com/workshop-${i}.jpg`}));
   profile.deck[0]='web-workshop-0';profile.decks=[{id:'deck-web',name:'網路保存組',deck:['web-workshop-1']}];
@@ -722,7 +773,7 @@ test('removed battle snapshots cannot corrupt decks and remain usable as new tem
   await page.locator(`[data-card="${id}"]`).click();await page.locator(`[data-delete="${id}"]`).click();await page.locator('#confirm-delete').click();
   const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
   await page.locator('[data-nav="battle"]').click();await page.locator('.own-formation [data-slot="0"]').click();await page.locator('[data-action="inspect"]').click();
-  await page.locator(`[data-add="${id}"]`).click();expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+  await expect(page.locator(`[data-favorite="${id}"]`)).toBeDisabled();await page.locator(`[data-add="${id}"]`).click();expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
   expect(()=>parseProfile(JSON.parse(saved))).not.toThrow();await page.locator(`[data-template="${id}"]`).click();
   await expect(page.locator('#card-form [name="name"]')).toHaveValue(name);await page.locator('#card-form [type="submit"]').click();
   const created=parseProfile(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1'))));

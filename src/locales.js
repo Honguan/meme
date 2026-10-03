@@ -1,5 +1,11 @@
 // Source-language keys keep domain values and imported card data independent of UI language.
 const rows = `
+收藏卡牌|Favorite card|カードをお気に入りに追加|Añadir carta a favoritos
+取消收藏|Remove favorite|お気に入りから削除|Quitar de favoritos
+只看收藏|Favorites only|お気に入りのみ|Solo favoritos
+收藏格式無效|Invalid favorites|お気に入りの形式が無効です|Favoritos no válidos
+匯入後取代目前卡組、已保存卡組、自訂卡庫與收藏。|Import replaces the current deck, saved decks, custom library and favorites.|インポートすると現在のデッキ、保存済みデッキ、カスタムカードとお気に入りが置き換わります。|La importación sustituye el mazo actual, los mazos guardados, las cartas personalizadas y los favoritos.
+也會從目前及所有已保存卡組移除這張卡，並取消收藏。|This card will also be removed from the current deck, all saved decks and favorites.|現在のデッキ、すべての保存済みデッキとお気に入りからもこのカードを削除します。|Esta carta también se eliminará del mazo actual, de todos los guardados y de los favoritos.
 存檔無法讀取|Save could not be read|セーブを読み込めません|No se puede leer la partida guardada
 原始存檔恢復|Recover original save|元のセーブを復旧|Recuperar guardado original
 下載原始存檔|Download original save|元のセーブをダウンロード|Descargar guardado original

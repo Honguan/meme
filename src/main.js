@@ -1,4 +1,4 @@
-import { createIcons, Swords, Layers, Hammer, Search, SlidersHorizontal, ArrowUpRight, ArrowRight, ArrowLeft, Plus, Minus, X, Zap, Shield, Heart, Sparkles, Volume2, VolumeX, RotateCcw, Github, Download, Upload, RefreshCw, Trash2, Check, ChevronRight, Target, Flame, Trophy, Palette, Save, Pencil } from 'lucide';
+import { createIcons, Swords, Layers, Hammer, Search, SlidersHorizontal, ArrowUpRight, ArrowRight, ArrowLeft, Plus, Minus, X, Zap, Shield, Heart, Sparkles, Volume2, VolumeX, RotateCcw, Github, Download, Upload, RefreshCw, Trash2, Check, ChevronRight, Target, Flame, Trophy, Palette, Save, Pencil, Star } from 'lucide';
 import { CATALOG, TYPES, TAGS, FIELDS, ACTIONS, TARGETS, TRIGGERS, PRESETS, WORLD_COVERAGE, templateCards, validateCustom, effectText } from './catalog.js';
 import { ARCHETYPES } from './semantics.js';
 import { createGame, createDailyGame, randomWorldDeck, playCard, playError, units, combos, planAI, finishRound, isUnit, moveUnit } from './game.js';
@@ -13,7 +13,7 @@ import { loadDraft, saveDraft } from './draft.js';
 import './style.css';
 import './duel.css';
 
-const icons = { Swords, Layers, Hammer, Search, SlidersHorizontal, ArrowUpRight, ArrowRight, ArrowLeft, Plus, Minus, X, Zap, Shield, Heart, Sparkles, Volume2, VolumeX, RotateCcw, Github, Download, Upload, RefreshCw, Trash2, Check, ChevronRight, Target, Flame, Trophy, Palette, Save, Pencil };
+const icons = { Swords, Layers, Hammer, Search, SlidersHorizontal, ArrowUpRight, ArrowRight, ArrowLeft, Plus, Minus, X, Zap, Shield, Heart, Sparkles, Volume2, VolumeX, RotateCcw, Github, Download, Upload, RefreshCw, Trash2, Check, ChevronRight, Target, Flame, Trophy, Palette, Save, Pencil, Star };
 document.documentElement.dataset.theme=loadTheme();
 const $ = (s, root = document) => root.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -41,7 +41,7 @@ let previewTimer, hoverCard, stopHoverPreview, stopModalPreview;
 const hoverPreview = document.createElement('aside');
 hoverPreview.className = 'hover-preview'; hoverPreview.hidden = true; hoverPreview.id = 'card-effect-preview';
 hoverPreview.setAttribute('role','tooltip'); document.body.append(hoverPreview);
-let sourceLanguage = 'all', sourceCountry = 'all', ability = 'all', sortOrder = 'catalog';
+let sourceLanguage = 'all', sourceCountry = 'all', ability = 'all', sortOrder = 'catalog', favoritesOnly = false;
 const languageNames = { ara:'العربية', ben:'বাংলা', deu:'Deutsch', eng:'English', fra:'Français', hin:'हिन्दी', jpn:'日本語', kor:'한국어', por:'Português', rus:'Русский', spa:'Español', tam:'தமிழ்', urd:'اردو', vie:'Tiếng Việt', zho:'中文' };
 let regionNames = new Intl.DisplayNames([getLocale()], { type: 'region' });
 const app = $('#app'), modal = $('#modal');
@@ -152,7 +152,7 @@ function image(card, extra = '') { return card.image ? `<img data-card-art src="
 function cardHTML(card, index = null) {
   const inHand = index !== null, num = profile.deck.filter(id => id === card.id).length;
   return `<button class="meme-card type-${card.type}" style="--tag:${TAGS[card.tag].color}" data-${inHand ? 'hand' : 'card'}="${inHand ? index : esc(card.id)}" aria-label="${esc(card.name)}，${tr(TYPES[card.type])}，${card.cost} ${tr('能量')}">
-    <span class="card-top"><b class="cost">${card.cost}</b><span>${TYPES[card.type]}</span><span class="card-rarity">${card.type === 'fusion' ? 'EX' : card.origin === '自訂' ? 'MY' : 'MC'}</span></span>
+    <span class="card-top"><b class="cost">${card.cost}</b><span>${TYPES[card.type]}</span><span class="card-rarity">${!inHand&&profile.favorites.includes(card.id)?icon('star','favorite-mark'):''}${card.type === 'fusion' ? 'EX' : card.origin === '自訂' ? 'MY' : 'MC'}</span></span>
     <span class="card-art">${image(card)}<span class="tag-pill">${TAGS[card.tag].name}</span></span>
     <span class="card-name">${esc(card.name)}</span>
     <span class="card-ability">${esc(effectText(card))}</span>
@@ -211,15 +211,15 @@ function inspectorHTML() {
   return c?`<div class="inspector-art">${image(c)}</div><div class="inspector-copy"><span class="eyebrow">${TYPES[c.type]} · ${TAGS[c.tag].name}</span><h2 data-original>${esc(c.name)}</h2><p>${esc(effectText(c))}</p><div class="inspector-stats">${icon('zap')} ${c.cost}${isUnit(c)?`${icon('swords')} ${c.attack}${icon('heart')} ${c.hp}`:''}</div><button class="text-button" data-action="inspect">卡牌詳情 ${icon('arrow-up-right')}</button>${selected?`<button class="icon-button cancel-selection" data-action="cancel-selection" aria-label="取消選擇" title="取消選擇">${icon('x')}</button>`:''}</div>`:'<div class="inspector-empty">MEME CLASH</div>';
 }
 function collectionHTML() {
-  const search=query.toLowerCase();
-  const filtered = catalog.filter(c => (filter === 'all' || c.type === filter) && (origin === 'all' || c.origin === origin) && (sourceLanguage === 'all' || (sourceLanguage === 'unknown' ? !c.languages?.length : c.languages?.includes(sourceLanguage))) && (sourceCountry === 'all' || c.countries?.includes(sourceCountry)) && (ability === 'all' || c.archetype === ability) && (!search || `${c.name} ${TAGS[c.tag].name} ${TAGS[c.tag].set} ${c.flavor} ${ARCHETYPES[c.archetype]?.name || ''} ${tr(TAGS[c.tag].name)} ${tr(TAGS[c.tag].set)} ${tr(ARCHETYPES[c.archetype]?.name || '')} ${effectText(c)}`.toLowerCase().includes(search)));
+  const search=query.toLowerCase(), favorites=new Set(profile.favorites);
+  const filtered = catalog.filter(c => (!favoritesOnly || favorites.has(c.id)) && (filter === 'all' || c.type === filter) && (origin === 'all' || c.origin === origin) && (sourceLanguage === 'all' || (sourceLanguage === 'unknown' ? !c.languages?.length : c.languages?.includes(sourceLanguage))) && (sourceCountry === 'all' || c.countries?.includes(sourceCountry)) && (ability === 'all' || c.archetype === ability) && (!search || `${c.name} ${TAGS[c.tag].name} ${TAGS[c.tag].set} ${c.flavor} ${ARCHETYPES[c.archetype]?.name || ''} ${tr(TAGS[c.tag].name)} ${tr(TAGS[c.tag].set)} ${tr(ARCHETYPES[c.archetype]?.name || '')} ${effectText(c)}`.toLowerCase().includes(search)));
   if(sortOrder==='name'){const compare=new Intl.Collator(getLocale(),{numeric:true}).compare;filtered.sort((a,b)=>compare(a.name,b.name));}
   else if(sortOrder==='cost')filtered.sort((a,b)=>a.cost-b.cost);
   else if(sortOrder==='attack'||sortOrder==='hp')filtered.sort((a,b)=>b[sortOrder]-a[sortOrder]);
   return `<main class="collection-page"><div class="page-heading"><h1>卡牌圖鑑</h1><button class="quiet-button" data-action="refresh">${icon('refresh-cw')} 更新網路卡庫</button></div>
     <div class="collection-toolbar"><label class="search-box">${icon('search')}<input id="search" type="search" placeholder="搜尋迷因、陣營或效果" aria-label="搜尋卡牌" value="${esc(query)}"></label><div class="filter-tabs" role="group" aria-label="卡牌類型">${[['all','全部'],...Object.entries(TYPES)].map(([id,label])=>`<button data-filter="${id}" class="${filter===id?'active':''}" aria-pressed="${filter===id}">${label}</button>`).join('')}</div><select id="origin-filter" aria-label="卡牌來源">${['all','精選','網路','全球','自訂'].map(o=>`<option value="${o}" ${origin===o?'selected':''}>${o==='all'?'所有來源':o}</option>`).join('')}</select></div>
     <div class="world-filters"><span>${WORLD_COVERAGE.count.toLocaleString()} 全球模板 · ${Object.keys(WORLD_COVERAGE.languages).length} 種來源語言 · ${Object.keys(WORLD_COVERAGE.countries).length} 個來源地區</span><label>來源語言<select id="language-filter"><option value="all">所有語言</option>${Object.keys(WORLD_COVERAGE.languages).map(code=>`<option value="${code}" ${sourceLanguage===code?'selected':''}>${languageNames[code] || code}</option>`).join('')}<option value="unknown" ${sourceLanguage==='unknown'?'selected':''}>未標註</option></select></label><label>來源地區<select id="country-filter"><option value="all">所有地區</option>${Object.keys(WORLD_COVERAGE.countries).map(code=>`<option value="${code}" ${sourceCountry===code?'selected':''}>${regionNames.of(code)}</option>`).join('')}</select></label><label>梗意能力<select id="ability-filter"><option value="all">所有能力</option>${Object.entries(ARCHETYPES).map(([id,a])=>`<option value="${id}" ${ability===id?'selected':''}>${a.name}</option>`).join('')}</select></label></div>
-    <div class="collection-layout"><section><div class="results-heading"><span>${filtered.length} 張卡牌</span><select id="sort-order" aria-label="卡牌排序">${[['catalog','原始順序'],['name','名稱順序'],['cost','能量低至高'],['attack','攻擊力高至低'],['hp','生命值高至低']].map(([id,label])=>`<option value="${id}" ${sortOrder===id?'selected':''}>${label}</option>`).join('')}</select></div><div class="catalog-grid">${filtered.slice(0,visible).map(c=>cardHTML(c)).join('') || '<div class="empty-state">沒有符合條件的卡牌。</div>'}</div>${filtered.length>visible?`<button class="quiet-button load-more" data-action="more">載入更多 ${icon('plus')}</button>`:''}</section>${deckSidebar()}</div></main>`;
+    <div class="collection-layout"><section><div class="results-heading"><span>${filtered.length} 張卡牌</span><label class="favorites-filter"><input id="favorites-only" type="checkbox" ${favoritesOnly?'checked':''}>只看收藏</label><select id="sort-order" aria-label="卡牌排序">${[['catalog','原始順序'],['name','名稱順序'],['cost','能量低至高'],['attack','攻擊力高至低'],['hp','生命值高至低']].map(([id,label])=>`<option value="${id}" ${sortOrder===id?'selected':''}>${label}</option>`).join('')}</select></div><div class="catalog-grid">${filtered.slice(0,visible).map(c=>cardHTML(c)).join('') || '<div class="empty-state">沒有符合條件的卡牌。</div>'}</div>${filtered.length>visible?`<button class="quiet-button load-more" data-action="more">載入更多 ${icon('plus')}</button>`:''}</section>${deckSidebar()}</div></main>`;
 }
 function deckSidebar() {
   const count = new Map(); profile.deck.forEach(id=>count.set(id,(count.get(id)||0)+1));
@@ -283,14 +283,15 @@ function showCard(id, handIndex = null) {
   const c = handIndex === null ? displayCard(id) : game.cards[game.players[game.active].hand[handIndex]];
   if (!c) return;
   const error = handIndex !== null ? playError(game, game.active, handIndex) : '';
-  openDialog(`<div class="card-detail"><div class="detail-art" style="--tag:${TAGS[c.tag].color}">${image(c)}</div><div class="detail-body"><span class="eyebrow" style="color:${TAGS[c.tag].color}">${TYPES[c.type]} / ${TAGS[c.tag].name}</span><h2>${esc(c.name)}</h2><p class="flavor" ${c.origin==='自訂'?'data-original':''}>${esc(c.flavor)}</p><div class="detail-stats"><span>${icon('zap')} ${c.cost} 能量</span>${isUnit(c)?`<span>${icon('swords')} ${c.attack}</span><span>${icon('heart')} ${c.hp}</span>`:''}</div><div class="effect-detail">${c.type==='fusion'?'<p>消耗兩名同陣營角色；繼承素材陣營及一半總攻擊。</p>':''}<p>${esc(effectText(c))}</p></div>
+  const favorite=profile.favorites.includes(c.id),favoriteLabel=tr(favorite?'取消收藏':'收藏卡牌');
+  openDialog(`<div class="card-detail"><div class="detail-art" style="--tag:${TAGS[c.tag].color}">${image(c)}</div><div class="detail-body"><span class="eyebrow" style="color:${TAGS[c.tag].color}">${TYPES[c.type]} / ${TAGS[c.tag].name}</span><div class="detail-heading"><h2 data-original>${esc(c.name)}</h2><button class="icon-button favorite-toggle" data-favorite="${esc(c.id)}" aria-pressed="${favorite}" aria-label="${favoriteLabel}" title="${favoriteLabel}" ${catalog.some(card=>card.id===c.id)?'':'disabled'}>${icon('star')}</button></div><p class="flavor" ${c.origin==='自訂'?'data-original':''}>${esc(c.flavor)}</p><div class="detail-stats"><span>${icon('zap')} ${c.cost} 能量</span>${isUnit(c)?`<span>${icon('swords')} ${c.attack}</span><span>${icon('heart')} ${c.hp}</span>`:''}</div><div class="effect-detail">${c.type==='fusion'?'<p>消耗兩名同陣營角色；繼承素材陣營及一半總攻擊。</p>':''}<p>${esc(effectText(c))}</p></div>
     <section class="modal-preview"><button class="quiet-button" data-preview="${esc(c.id)}">${icon('sparkles')} 播放效果演示</button><div id="modal-preview-stage" hidden></div></section>
     ${isUnit(c)?`<section class="set-detail" aria-label="連攜套裝">${setRulesHTML(c.tag)}<p>${c.type==='fusion'?'融合後改用素材陣營的套裝；兩份素材合為 1 件。':'同一方存活的同陣營角色各計 1 件；3 件效果與 2 件效果疊加。'}</p></section>`:''}
     ${handIndex!==null?`<label class="target-select">優先目標<select id="play-target"><option value="">自動選擇</option>${game.units.filter(u=>u.hp>0&&!playError(game,game.active,handIndex,u.uid)).map(u=>`<option value="${u.uid}">${u.side===game.active?'友軍':'敵軍'} · ${esc(u.name)} (${u.hp} HP)</option>`).join('')}</select></label><p class="form-error">${esc(error)}</p><button class="primary-button" data-play="${handIndex}" ${error?'disabled':''}>${icon(c.type==='monster'?'swords':'sparkles')} ${c.type==='monster'?'召喚角色':c.type==='trap'?'設置陷阱':c.type==='fusion'?'融合召喚':'發動卡牌'}</button>`:
     `<button class="primary-button" data-add="${esc(c.id)}">${icon('plus')} 加入卡組</button><button class="quiet-button" data-template="${esc(c.id)}">${icon('hammer')} 以此為範本</button>${c.origin==='自訂'?`<button class="quiet-button" data-edit="${esc(c.id)}">${icon('hammer')} 編輯卡牌</button><button class="text-button danger" data-delete="${esc(c.id)}">${icon('trash-2')} 刪除自訂卡</button>`:''}`}
     ${c.evidence?`<section class="meaning-detail"><b>梗意設計 · ${esc(ARCHETYPES[c.archetype]?.name || '待設定')}</b>${c.sourceName&&c.sourceName!==c.name?`<p>原始名稱：<span data-original>${esc(c.sourceName)}</span></p>`:''}<p>依據${c.evidence.field==='name'?'名稱':'來源標籤'}：<span data-original>${esc(c.evidence.value)}</span></p><p>${esc(c.flavor)}</p>${c.languages?.length?`<p>來源語言：<span data-original>${c.languages.map(code=>esc(languageNames[code] || code)).join(' · ')}</span></p>`:''}</section>`:''}
     ${c.source?`<a class="source-link" href="${esc(c.source)}" target="_blank" rel="noopener noreferrer">來源：${c.origin==='全球'?'templates.meme':'Imgflip'} ${icon('arrow-up-right')}</a>`:'<span class="source-link">玩家自訂作品</span>'}</div></div>`, 'card-modal');
-  if(online)for(const button of modal.querySelectorAll('[data-add],[data-template],[data-edit],[data-delete]'))button.hidden=true;
+  if(online)for(const button of modal.querySelectorAll('[data-add],[data-template],[data-edit],[data-delete],[data-favorite]'))button.hidden=true;
 }
 function newDialog(showFields = false) {
   openDialog(`<div class="dialog-heading"><span class="eyebrow accent">NEXT MATCH</span><h2>${showFields?'選擇你的戰場':'建立新對決'}</h2></div><form id="match-form"><div class="match-options"><label>對手<select name="mode"><option value="ai" ${game.mode==='ai'?'selected':''}>網路混沌 AI</option><option value="local" ${game.mode==='local'?'selected':''}>同機雙人</option></select></label><label>勝利目標<select name="goal">${[['classic','生命決勝 · 20 LP'],['knockout','率先擊倒 5 名角色'],['sandbox','自由沙盒 · 無限能量']].map(([v,t])=>`<option value="${v}" ${game.goal===v?'selected':''}>${t}</option>`).join('')}</select></label></div><fieldset class="field-picker"><legend>場地</legend>${FIELDS.map((f,i)=>`<label class="field-option" style="--field:${f.color}"><input type="radio" name="field" value="${f.id}" ${game.field===f.id?'checked':''}><span class="field-art field-art-${f.id}"><span>0${i+1}</span>${icon(f.id==='fine'?'flame':f.id==='moon'?'sparkles':f.id==='xp'?'heart':'layers')}</span><b>${f.name}</b><small>${f.description}</small></label>`).join('')}</fieldset><p id="match-error" class="form-error" role="alert"></p><button class="primary-button" type="submit">${icon('swords')} 開始新對決 ${icon('arrow-right')}</button></form>`, 'match-modal');
@@ -349,9 +350,10 @@ async function refreshCatalog(button) {
     if (!data.success || !Array.isArray(data.data?.memes)) throw new Error('卡庫資料格式無效');
     const accepted = data.data.memes.filter(m=>templateCards([m]).length).map(({id,name,url})=>({id,name,url}));
     const before = catalog.length;
-    const referenced = new Set([...profile.deck, ...profile.decks.flatMap(saved=>saved.deck)]);
+    const referenced = new Set([...profile.deck, ...profile.decks.flatMap(saved=>saved.deck), ...profile.favorites]);
+    const existingIds = new Set(profile.web.map(m=>m.id));
     const templates = [...new Map([...profile.web,...accepted].map(m=>[m.id,m])).values()];
-    const required = templates.filter(m=>referenced.has(templateCards([m])[0]?.id));
+    const required = templates.filter(m=>existingIds.has(m.id)&&referenced.has(templateCards([m])[0]?.id));
     const requiredIds = new Set(required.map(m=>m.id));
     const recent = templates.filter(m=>!requiredIds.has(m.id));
     const web = [...required, ...recent.slice(Math.max(0,recent.length+required.length-1000))];
@@ -374,7 +376,7 @@ function importProfile() {
       const raw = await file.text();
       if (version !== importVersion) return;
       const incoming = parseProfile(JSON.parse(raw));
-      openDialog(`<div class="dialog-heading"><h2>匯入卡組</h2><p>${incoming.deck.length} 張卡組卡牌、${incoming.custom.length} 張自訂卡牌、${incoming.decks.length} 組已保存卡組。匯入後取代目前卡組、已保存卡組與自訂卡庫。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-import">${icon('upload')} 確認匯入</button></div>`, 'small-modal');
+      openDialog(`<div class="dialog-heading"><h2>匯入卡組</h2><p>${incoming.deck.length} 張卡組卡牌、${incoming.custom.length} 張自訂卡牌、${incoming.decks.length} 組已保存卡組。匯入後取代目前卡組、已保存卡組、自訂卡庫與收藏。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-import">${icon('upload')} 確認匯入</button></div>`, 'small-modal');
       $('#confirm-import').onclick = () => { if (!persist({ ...incoming, stats: recoveryRaw!==null?incoming.stats:profile.stats },true)) return; savedDeckId='';deckName='';modal.close();render();toast('卡組已匯入'); };
     } catch(e) { if (version === importVersion) toast(`匯入失敗：${e.message}`); }
   }; input.click();
@@ -492,6 +494,13 @@ document.addEventListener('click', e => {
     playFromHand(Number(button.dataset.play),$('#play-target')?.value);return;
   }
   if (button.dataset.add) return addToDeck(button.dataset.add);
+  if (button.dataset.favorite) {
+    const id=button.dataset.favorite;if(!catalog.some(c=>c.id===id))return toast('找不到卡牌');
+    const favorite=!profile.favorites.includes(id),favorites=favorite?[...profile.favorites,id]:profile.favorites.filter(value=>value!==id);
+    if(!persist({...profile,favorites}))return;
+    button.setAttribute('aria-pressed',String(favorite));const label=tr(favorite?'取消收藏':'收藏卡牌');button.setAttribute('aria-label',label);button.title=label;
+    if(screen==='collection')render();return;
+  }
   if (button.dataset.remove) { const at=profile.deck.indexOf(button.dataset.remove); if(at>=0&&persist({...profile,deck:profile.deck.filter((_,i)=>i!==at)}))render(); return; }
   if (button.dataset.filter) { filter=button.dataset.filter; visible=24; render(); return; }
   if (button.dataset.edit) { const card=profile.custom.find(c=>c.id===button.dataset.edit);if(!card)return;editingId=card.id;editSource=JSON.stringify(card);formBase=structuredClone(card);storeCardDraft();modal.close();screen='workshop';render();return; }
@@ -499,8 +508,8 @@ document.addEventListener('click', e => {
   if (button.dataset.preset) { if(!persist({...profile,deck:[...PRESETS[button.dataset.preset].deck]}))return;savedDeckId='';deckName='';render();toast('已套用預設卡組');return; }
   if (button.dataset.delete) {
     const id=button.dataset.delete;
-    openDialog(`<div class="dialog-heading"><h2>刪除這張自訂卡？</h2><p>也會從目前及所有已保存卡組移除這張卡。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-delete">${icon('trash-2')} 刪除</button></div>`,'small-modal');
-    $('#confirm-delete').onclick=()=>{if(!persist({...profile,custom:profile.custom.filter(c=>c.id!==id),deck:profile.deck.filter(x=>x!==id),decks:profile.decks.map(saved=>({...saved,deck:saved.deck.filter(x=>x!==id)}))}))return;modal.close();render();};return;
+    openDialog(`<div class="dialog-heading"><h2>刪除這張自訂卡？</h2><p>也會從目前及所有已保存卡組移除這張卡，並取消收藏。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-delete">${icon('trash-2')} 刪除</button></div>`,'small-modal');
+    $('#confirm-delete').onclick=()=>{if(!persist({...profile,custom:profile.custom.filter(c=>c.id!==id),deck:profile.deck.filter(x=>x!==id),decks:profile.decks.map(saved=>({...saved,deck:saved.deck.filter(x=>x!==id)})),favorites:profile.favorites.filter(x=>x!==id)}))return;modal.close();render();};return;
   }
   switch(button.dataset.action) {
     case 'save-deck': saveDeck();break;
@@ -586,6 +595,7 @@ document.addEventListener('change', e=>{
   if(e.target.id==='country-filter') {sourceCountry=e.target.value;visible=24;render();}
   if(e.target.id==='ability-filter') {ability=e.target.value;visible=24;render();}
   if(e.target.id==='sort-order') {sortOrder=e.target.value;visible=24;render();}
+  if(e.target.id==='favorites-only') {favoritesOnly=e.target.checked;visible=24;render();$('#favorites-only').focus();}
   if(e.target.name==='type') {syncTriggers();localize($('#effect-rows'));}
   if(e.target.closest('#card-form')){formBase=readCardForm(e.target.form);storeCardDraft();}
 });

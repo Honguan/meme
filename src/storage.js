@@ -16,6 +16,8 @@ export function parseProfile(data) {
     return [...deck];
   };
   const deck = checkDeck(data.deck);
+  if (data.favorites !== undefined && (!Array.isArray(data.favorites) || data.favorites.length > ids.size || data.favorites.some(id=>!ids.has(id)) || new Set(data.favorites).size !== data.favorites.length)) throw new Error('收藏格式無效');
+  const favorites = [...(data.favorites ?? [])];
   if (data.decks !== undefined && (!Array.isArray(data.decks) || data.decks.length > 20)) throw new Error('已保存卡組格式無效或超過 20 組');
   const decks = (data.decks ?? []).map(saved => {
     if (!saved || typeof saved.id !== 'string' || !/^[a-zA-Z0-9-]{1,64}$/.test(saved.id)) throw new Error('已保存卡組 ID 無效');
@@ -25,7 +27,7 @@ export function parseProfile(data) {
   if (new Set(decks.map(saved => saved.id)).size !== decks.length) throw new Error('已保存卡組 ID 重複');
   const stats = { wins: 0, losses: 0, games: 0 };
   for (const k of Object.keys(stats)) if (Number.isSafeInteger(data.stats?.[k]) && data.stats[k] >= 0) stats[k] = data.stats[k];
-  return { version: 1, custom, web, deck, decks, stats };
+  return { version: 1, custom, web, deck, decks, favorites, stats };
 }
 export function loadProfile() {
   let raw = null;
@@ -35,7 +37,7 @@ export function loadProfile() {
   } catch { return { profile: freshProfile(), error: '存檔無法讀取，已載入預設卡組。原始存檔尚未覆寫。', raw }; }
   return { profile: freshProfile(), error: '', raw };
 }
-export function freshProfile() { return { version: 1, custom: [], web: [], deck: [...DEFAULT_DECK], decks: [], stats: { wins: 0, losses: 0, games: 0 } }; }
+export function freshProfile() { return { version: 1, custom: [], web: [], deck: [...DEFAULT_DECK], decks: [], favorites: [], stats: { wins: 0, losses: 0, games: 0 } }; }
 export function saveProfile(profile, expectedRaw) {
   if (expectedRaw !== undefined && localStorage.getItem(STORAGE_KEY) !== expectedRaw) return null;
   const raw = JSON.stringify(profile);

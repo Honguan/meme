@@ -46,6 +46,15 @@ test('version 1 profiles preserve saved decks and accept old profiles and drafts
   assert.equal(original.decks[0].deck.length, 1);
 });
 
+test('favorites round-trip independently of decks and legacy saves default to none',()=>{
+  const profile=freshProfile(),id=profile.deck[0];
+  const {favorites,...legacy}=profile;assert.deepEqual(parseProfile(legacy).favorites,[]);
+  profile.favorites=[id];const parsed=parseProfile(JSON.parse(JSON.stringify(profile)));
+  assert.deepEqual(parsed.favorites,[id]);assert.deepEqual(parsed.deck,profile.deck);assert.deepEqual(parsed.stats,profile.stats);
+  parsed.favorites.length=0;assert.deepEqual(profile.favorites,[id]);
+  for(const favorites of [null,{},id,[id,id],['unknown'],[null],Array(10000).fill(id)])assert.throws(()=>parseProfile({...profile,favorites}),/收藏/);
+});
+
 test('saved decks reject malformed IDs, names, cards and limits', () => {
   const profile = freshProfile();
   const saved = { id: 'deck-test', name: 'Test', deck: [] };
