@@ -207,13 +207,18 @@ function deckSidebar() {
 function effectRow(value = { trigger: 'play', action: 'shield', target: 'self', amount: 3 }) {
   return `<div class="effect-row"><label>時機<select name="trigger">${Object.entries(TRIGGERS).map(([key,name])=>`<option value="${key}" ${key===value.trigger?'selected':''}>${name}</option>`).join('')}</select></label><label>效果<select name="action">${Object.entries(ACTIONS).map(([key,name])=>`<option value="${key}" ${key===value.action?'selected':''}>${name}</option>`).join('')}</select></label><label>對象<select name="target">${Object.entries(TARGETS).map(([key,name])=>`<option value="${key}" ${key===value.target?'selected':''}>${name}</option>`).join('')}</select></label><label>數值<input name="amount" type="number" min="1" max="99" value="${value.amount}" required></label><button class="icon-button" type="button" data-action="remove-effect" aria-label="移除此效果" title="移除此效果">${icon('x')}</button></div>`;
 }
+function readCardForm(form) {
+  const data=Object.fromEntries(new FormData(form));
+  data.effects=[...form.querySelectorAll('.effect-row')].map(row=>({trigger:$('[name="trigger"]',row).value,action:$('[name="action"]',row).value,target:$('[name="target"]',row).value,amount:$('[name="amount"]',row).value}));
+  return data;
+}
 function workshopHTML() {
   const c = formBase || { name:'', type:'monster', tag:'chaos', cost:2, attack:4, hp:12, speed:5, image:'', flavor:'', effects:[{ trigger:'play', action:'shield',target:'self',amount:3 }] };
   return `<main class="workshop-page"><div class="page-heading"><h1>卡組工坊</h1><span class="small-count">${profile.custom.length} 張自訂卡牌</span></div>
     <div class="workshop-layout"><section class="workshop-main"><div class="preset-band"><h2>卡組流派</h2><div class="preset-options">${Object.entries(PRESETS).map(([id,p],i)=>`<button data-preset="${id}" class="preset"><span class="preset-icon preset-${i}">${icon(i===0?'swords':i===1?'flame':'heart')}</span><span><b>${p.name}</b><small>${p.deck.length} 張卡牌</small></span>${icon('arrow-up-right')}</button>`).join('')}</div></div>
     <div class="extra-play"><button class="quiet-button" data-action="random-deck">${icon('refresh-cw')} 全球隨機套裝</button><button class="quiet-button" data-action="daily">${icon('trophy')} 每日挑戰</button></div>
     <form id="card-form"><div class="form-heading"><h2>創作卡牌</h2><span>NEW CARD / ${String(profile.custom.length+1).padStart(3,'0')}</span></div>
-    <div class="form-grid"><label class="wide">卡牌名稱<input name="name" maxlength="72" value="${esc(c.name)}" placeholder="卡牌名稱" required></label><label>類型<select name="type">${Object.entries(TYPES).map(([id,n])=>`<option value="${id}" ${c.type===id?'selected':''}>${n}</option>`).join('')}</select></label><label>陣營<select name="tag">${Object.entries(TAGS).map(([id,t])=>`<option value="${id}" ${c.tag===id?'selected':''}>${t.name}</option>`).join('')}</select></label><label>能量消耗<input name="cost" type="number" min="0" max="9" value="${c.cost}" required></label><label>碰撞速度<input name="speed" type="number" min="1" max="12" value="${c.speed}" required></label><label>攻擊力<input name="attack" type="number" min="0" max="99" value="${c.attack}" required></label><label>生命值<input name="hp" type="number" min="1" max="999" value="${Math.max(1,c.hp)}" required></label><label class="wide">圖片網址<input name="image" type="url" maxlength="2048" value="${esc(c.image)}" placeholder="https://…"></label><label class="wide">卡牌宣言<input name="flavor" maxlength="160" value="${esc(c.flavor)}" placeholder="台詞或備註"></label><label class="wide field-rule" ${c.type!=='field'?'hidden':''}>場地規則<select name="field">${FIELDS.map(f=>`<option value="${f.id}" ${c.field===f.id?'selected':''}>${f.name}：${f.description}</option>`).join('')}</select></label></div>
+    <div class="form-grid"><label class="wide">卡牌名稱<input name="name" maxlength="72" value="${esc(c.name)}" placeholder="卡牌名稱" required></label><label>類型<select name="type">${Object.entries(TYPES).map(([id,n])=>`<option value="${id}" ${c.type===id?'selected':''}>${n}</option>`).join('')}</select></label><label>陣營<select name="tag">${Object.entries(TAGS).map(([id,t])=>`<option value="${id}" ${c.tag===id?'selected':''}>${t.name}</option>`).join('')}</select></label><label>能量消耗<input name="cost" type="number" min="0" max="9" value="${c.cost}" required></label><label>碰撞速度<input name="speed" type="number" min="1" max="12" value="${c.speed}" required></label><label>攻擊力<input name="attack" type="number" min="0" max="99" value="${c.attack}" required></label><label>生命值<input name="hp" type="number" min="1" max="999" value="${typeof c.hp==='string'?esc(c.hp):Math.max(1,c.hp)}" required></label><label class="wide">圖片網址<input name="image" type="url" maxlength="2048" value="${esc(c.image)}" placeholder="https://…"></label><label class="wide">卡牌宣言<input name="flavor" maxlength="160" value="${esc(c.flavor)}" placeholder="台詞或備註"></label><label class="wide field-rule" ${c.type!=='field'?'hidden':''}>場地規則<select name="field">${FIELDS.map(f=>`<option value="${f.id}" ${c.field===f.id?'selected':''}>${f.name}：${f.description}</option>`).join('')}</select></label></div>
     <div class="form-heading effects-heading"><h3>效果連鎖</h3><button class="text-button" type="button" data-action="add-effect">${icon('plus')} 新增效果</button></div><div id="effect-rows">${c.effects.map(effectRow).join('')}</div><p class="form-error" id="form-error" role="alert"></p><button class="primary-button" type="submit">${icon('sparkles')} 鑄造卡牌</button></form>
     </section>${deckSidebar()}</div></main>`;
 }
@@ -495,11 +500,12 @@ document.addEventListener('click', e => {
     case 'recovery': recoveryDialog();break;
     case 'export-recovery': if(recoveryRaw!==null)exportProfile(recoveryRaw,'meme-clash-recovery.json');break;
     case 'import': importProfile();break;
-    case 'add-effect': if($('#effect-rows').children.length>=4) toast('最多 4 組效果');else {$('#effect-rows').insertAdjacentHTML('beforeend',effectRow());syncTriggers();localize($('#effect-rows'));drawIcons();}break;
-    case 'remove-effect': button.closest('.effect-row').remove();break;
+    case 'add-effect': if($('#effect-rows').children.length>=4) toast('最多 4 組效果');else {$('#effect-rows').insertAdjacentHTML('beforeend',effectRow());syncTriggers();formBase=readCardForm($('#card-form'));localize($('#effect-rows'));drawIcons();}break;
+    case 'remove-effect': button.closest('.effect-row').remove();formBase=readCardForm($('#card-form'));break;
   }
 });
 document.addEventListener('input', e => {
+  if(e.target.closest('#card-form'))formBase=readCardForm(e.target.form);
   if(e.target.id==='deck-name')deckName=e.target.value;
   if(e.target.id==='search') { const pos=e.target.selectionStart; query=e.target.value; visible=24; render(); const input=$('#search'); input.focus(); try {input.setSelectionRange(pos,pos);} catch {} }
 });
@@ -521,6 +527,7 @@ document.addEventListener('change', e=>{
   if(e.target.id==='country-filter') {sourceCountry=e.target.value;visible=24;render();}
   if(e.target.id==='ability-filter') {ability=e.target.value;visible=24;render();}
   if(e.target.name==='type') {syncTriggers();localize($('#effect-rows'));}
+  if(e.target.closest('#card-form'))formBase=readCardForm(e.target.form);
 });
 document.addEventListener('submit', e=>{
   if(e.target.id==='online-form') {
@@ -536,8 +543,8 @@ document.addEventListener('submit', e=>{
   if(e.target.id==='card-form') {
     e.preventDefault();
     if(profile.custom.length>=1000){$('#form-error').textContent=tr('最多保存 1000 張自訂卡牌');return;}
-    const data=Object.fromEntries(new FormData(e.target));
-    data.effects=[...$('#effect-rows').children].map(row=>({trigger:$('[name="trigger"]',row).value,action:$('[name="action"]',row).value,target:$('[name="target"]',row).value,amount:Number($('[name="amount"]',row).value)}));
+    const data=readCardForm(e.target);
+    data.effects.forEach(effect=>effect.amount=Number(effect.amount));
     try { const card=validateCustom(data);if(!persist({...profile,custom:[...profile.custom,card]}))return;formBase=null;screen='collection';origin='自訂';filter='all';sourceLanguage='all';sourceCountry='all';ability='all';query='';render();toast(`已鑄造「${card.name}」`); } catch(error) {$('#form-error').textContent=tr(error.message);}
   }
 });

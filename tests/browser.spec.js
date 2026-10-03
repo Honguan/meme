@@ -2,6 +2,41 @@ import { test, expect } from '@playwright/test';
 import { freshProfile, parseProfile } from '../src/storage.js';
 import { CATALOG } from '../src/catalog.js';
 
+test('unfinished card drafts survive redraws and clear only after successful creation',async({page})=>{
+  await page.goto('/');await page.locator('[data-nav="workshop"]').click();
+  const form=()=>page.locator('#card-form');
+  const read=()=>form().evaluate(form=>({...Object.fromEntries(new FormData(form)),effects:[...form.querySelectorAll('.effect-row')].map(row=>Object.fromEntries([...row.querySelectorAll('input,select')].map(input=>[input.name,input.value])))}));
+  await form().locator('[name="name"]').fill('草稿 原創角色');await form().locator('[name="flavor"]').fill('尚未完成 "狀態"');
+  await form().locator('[name="tag"]').selectOption('brain');await form().locator('[name="cost"]').fill('');await form().locator('[name="hp"]').fill('');
+  await form().locator('[name="trigger"]').selectOption('round');await page.locator('[data-action="add-effect"]').click();
+  await form().locator('[name="action"]').nth(1).selectOption('draw');await form().locator('[name="amount"]').nth(1).fill('');
+  const original=await read();
+  await page.locator('[data-action="appearance"]').click();await page.locator('#interface-language').selectOption('en');await page.keyboard.press('Escape');
+  expect(await read()).toEqual(original);
+  await page.locator('[data-action="appearance"]').click();await page.locator('[name="theme"]').nth(1).check();await page.keyboard.press('Escape');
+  expect(await read()).toEqual(original);
+  await page.locator('[data-nav="collection"]').click();await page.locator('[data-nav="workshop"]').click();expect(await read()).toEqual(original);
+  await page.locator('#deck-name').fill('Draft companion');await page.locator('[data-action="save-deck"]').click();expect(await read()).toEqual(original);
+  await page.locator('[data-preset="chaos"]').click();expect(await read()).toEqual(original);
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).custom)).toEqual([]);
+  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+  await form().locator('[name="cost"]').fill('2');await form().locator('[name="hp"]').fill('23');await form().locator('[name="amount"]').nth(1).fill('7');
+  await form().locator('[name="type"]').selectOption('trap');
+  expect(await form().locator('[name="trigger"]').evaluateAll(selects=>selects.map(select=>select.value))).toEqual(['hit','hit']);
+  const trap=await read();await page.locator('[data-nav="collection"]').click();await page.locator('[data-nav="workshop"]').click();expect(await read()).toEqual(trap);
+  await page.locator('[data-action="remove-effect"]').first().click();await page.locator('[data-action="remove-effect"]').first().click();
+  await page.locator('[data-nav="collection"]').click();await page.locator('[data-nav="workshop"]').click();await expect(page.locator('.effect-row')).toHaveCount(0);
+  await page.locator('[data-action="add-effect"]').click();await expect(form().locator('[name="trigger"]')).toHaveValue('hit');
+  await page.evaluate(()=>{window.storageFails=true;const setItem=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){if(key==='meme-clash-v1'&&window.storageFails)throw new DOMException('Quota exceeded','QuotaExceededError');return setItem.call(this,key,value);};});
+  await form().locator('[type="submit"]').click();await expect(page.locator('#toast')).toContainText('Browser storage unavailable');
+  const rejected=await read();await page.locator('[data-nav="collection"]').click();await page.locator('[data-nav="workshop"]').click();expect(await read()).toEqual(rejected);
+  await page.evaluate(()=>window.storageFails=false);await form().locator('[type="submit"]').click();
+  const custom=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).custom);expect(custom).toHaveLength(1);
+  expect(custom[0].name).toBe(original.name);expect(custom[0].type).toBe('trap');expect(custom[0].effects[0].trigger).toBe('hit');
+  await page.locator('[data-nav="workshop"]').click();await expect(form().locator('[name="name"]')).toHaveValue('');
+  await expect(form().locator('[name="type"]')).toHaveValue('monster');await expect(form().locator('[name="trigger"]')).toHaveValue('play');
+});
+
 test('unreadable saves remain recoverable until an explicit replacement succeeds',async({page})=>{
   const raw='{"version":1,"custom":[{"name":"不可遺失的卡牌"}]';
   await page.addInitScript(raw=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',raw);},raw);
@@ -9,6 +44,12 @@ test('unreadable saves remain recoverable until an explicit replacement succeeds
   await page.locator('[data-remove]').first().click();
   expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(raw);
   await expect(page.getByRole('heading',{name:'存檔無法讀取',exact:true})).toBeVisible();
+  await page.keyboard.press('Escape');await page.locator('[data-nav="workshop"]').click();
+  await page.locator('#card-form [name="name"]').fill('恢復鎖中的草稿');await page.locator('#card-form [type="submit"]').click();
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(raw);
+  await page.keyboard.press('Escape');await page.locator('[data-nav="collection"]').click();await page.locator('[data-nav="workshop"]').click();
+  await expect(page.locator('#card-form [name="name"]')).toHaveValue('恢復鎖中的草稿');
+  await page.getByRole('button',{name:'原始存檔恢復',exact:true}).click();
   const download=page.waitForEvent('download');await page.getByRole('button',{name:'下載原始存檔',exact:true}).click();
   const file=await download;expect(file.suggestedFilename()).toBe('meme-clash-recovery.json');
   const stream=await file.createReadStream(),chunks=[];for await(const chunk of stream)chunks.push(chunk);
