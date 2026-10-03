@@ -144,19 +144,28 @@ test('recovery imports restore backup statistics only after a successful confirm
   expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).stats)).toEqual(backup.stats);
 });
 
-test('deck-only updates reuse the derived catalog instead of cloning every web template',async({page})=>{
+test('deck-only updates reuse the catalog and empty searches skip per-card text construction',async({page})=>{
   const profile=freshProfile();
   profile.web=Array.from({length:1000},(_,i)=>({id:`catalog-cache-${i}`,name:`Dancing ${i}`,url:'https://example.com/template.png'}));
   await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),profile);
   await page.goto('/');await page.locator('[data-nav="collection"]').click();
   await expect(page.locator('.results-heading')).toContainText(String(CATALOG.length+profile.web.length));
-  const clones=await page.evaluate(()=>{
-    const clone=window.structuredClone;let count=0;
-    window.structuredClone=(...args)=>{count++;return clone(...args);};
-    try {document.querySelector('[data-remove]').click();return count;}
-    finally {window.structuredClone=clone;}
+  const work=await page.evaluate(()=>{
+    const clone=window.structuredClone,lower=String.prototype.toLowerCase;let clones=0,searches=0;
+    window.structuredClone=(...args)=>{clones++;return clone(...args);};
+    String.prototype.toLowerCase=function(){if(this.startsWith('Dancing '))searches++;return lower.call(this);};
+    try {document.querySelector('[data-remove]').click();return {clones,searches};}
+    finally {window.structuredClone=clone;String.prototype.toLowerCase=lower;}
   });
-  expect(clones).toBe(0);await expect(page.locator('.deck-count')).toContainText(String(profile.deck.length-1));
+  expect(work).toEqual({clones:0,searches:0});await expect(page.locator('.deck-count')).toContainText(String(profile.deck.length-1));
+  await page.getByRole('searchbox',{name:'搜尋卡牌'}).fill('DANCING 987');await expect(page.locator('.catalog-grid .meme-card')).toHaveCount(1);await expect(page.locator('.catalog-grid .meme-card')).toContainText('Dancing 987');
+  const searches=await page.evaluate(()=>{
+    const lower=String.prototype.toLowerCase;let count=0;
+    String.prototype.toLowerCase=function(){if(this.startsWith('Dancing '))count++;return lower.call(this);};
+    try {const input=document.querySelector('#search');input.value='';input.dispatchEvent(new Event('input',{bubbles:true}));return count;}
+    finally {String.prototype.toLowerCase=lower;}
+  });
+  expect(searches).toBe(0);await expect(page.locator('.results-heading')).toContainText(String(CATALOG.length+profile.web.length));
   expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).web.length)).toBe(1000);
 });
 
