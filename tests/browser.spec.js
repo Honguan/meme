@@ -2,6 +2,28 @@ import { test, expect } from '@playwright/test';
 import { freshProfile, parseProfile } from '../src/storage.js';
 import { CATALOG } from '../src/catalog.js';
 
+test('stale tabs cannot overwrite another tab cards or recovery replacements',async({page,context})=>{
+  await page.goto('/');const other=await context.newPage();await other.goto('/');
+  const craft=async(tab,name)=>{await tab.locator('[data-nav="workshop"]').click();await tab.locator('#card-form [name="name"]').fill(name);await tab.locator('#card-form [type="submit"]').click();};
+  const stored=()=>page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  await craft(page,'分頁 A 的新卡');const first=await stored();
+  await craft(other,'分頁 B 的草稿');await expect(other.locator('#toast')).toContainText('存檔已在其他分頁更新');
+  expect(await stored()).toBe(first);await expect(other.locator('#card-form [name="name"]')).toHaveValue('分頁 B 的草稿');
+  const download=other.waitForEvent('download');await other.locator('[data-action="export"]').click();
+  const file=await download,stream=await file.createReadStream(),chunks=[];for await(const chunk of stream)chunks.push(chunk);
+  expect(JSON.parse(Buffer.concat(chunks).toString('utf8')).custom).toEqual([]);
+  await page.reload();await other.reload();await expect(other.getByRole('heading',{name:'存檔無法讀取',exact:true})).toHaveCount(0);
+  await craft(other,'分頁 B 的新卡');const second=await stored();expect(JSON.parse(second).custom.map(card=>card.name)).toEqual(['分頁 A 的新卡','分頁 B 的新卡']);
+  await craft(other,'分頁 B 的第三張卡');const third=await stored();expect(JSON.parse(third).custom).toHaveLength(3);
+  await page.locator('[data-nav="workshop"]').click();await page.locator('[data-remove]').first().click();await expect(page.locator('#toast')).toContainText('存檔已在其他分頁更新');expect(await stored()).toBe(third);
+  const damaged='{"version":1,"custom":[';await page.evaluate(raw=>localStorage.setItem('meme-clash-v1',raw),damaged);await page.reload();
+  await expect(page.getByRole('heading',{name:'存檔無法讀取',exact:true})).toBeVisible();
+  await other.evaluate(raw=>localStorage.setItem('meme-clash-v1',raw),third);
+  await page.locator('#confirm-reset-save').click();await expect(page.locator('#toast')).toContainText('存檔已在其他分頁更新');expect(await stored()).toBe(third);
+  await expect(page.getByRole('heading',{name:'存檔無法讀取',exact:true})).toBeVisible();
+  await page.reload();await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');await expect(page.locator('.catalog-grid .meme-card')).toHaveCount(3);
+});
+
 test('unfinished card drafts survive redraws and clear only after successful creation',async({page})=>{
   await page.goto('/');await page.locator('[data-nav="workshop"]').click();
   const form=()=>page.locator('#card-form');

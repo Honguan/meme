@@ -10,10 +10,26 @@ test('unreadable and empty saves expose their exact original bytes without overw
       stored=raw;const loaded=loadProfile();
       assert.equal(loaded.raw,raw);assert.ok(loaded.error);assert.deepEqual(loaded.profile,freshProfile());assert.equal(stored,raw);
     }
-    stored=null;assert.equal(loadProfile().error,'');assert.equal(loadProfile().raw,undefined);
-    stored=JSON.stringify(freshProfile());assert.equal(loadProfile().error,'');assert.equal(loadProfile().raw,undefined);
+    stored=null;assert.equal(loadProfile().error,'');assert.equal(loadProfile().raw,null);
+    stored=JSON.stringify(freshProfile());assert.equal(loadProfile().error,'');assert.equal(loadProfile().raw,stored);
     globalThis.localStorage.getItem=()=>{throw new Error('Access denied');};
     assert.equal(loadProfile().raw,null);assert.ok(loadProfile().error);
+  } finally {if(previous===undefined)delete globalThis.localStorage;else globalThis.localStorage=previous;}
+});
+
+test('expected save bytes reject stale writes, including external removal and unreadable replacements',()=>{
+  const previous=globalThis.localStorage;let stored=null,writes=0;
+  globalThis.localStorage={getItem(){return stored;},setItem(key,raw){assert.equal(key,STORAGE_KEY);stored=raw;writes++;}};
+  try {
+    const initial=loadProfile();assert.equal(initial.raw,null);
+    const first=saveProfile(initial.profile,initial.raw);assert.equal(first,stored);assert.equal(writes,1);
+    assert.equal(saveProfile(freshProfile(),null),null);assert.equal(stored,first);assert.equal(writes,1);
+    const second=saveProfile({...initial.profile,stats:{wins:1,losses:0,games:1}},first);assert.equal(second,stored);assert.equal(writes,2);
+    stored=null;assert.equal(saveProfile(initial.profile,second),null);assert.equal(stored,null);assert.equal(writes,2);
+    stored='';const damaged=loadProfile();assert.equal(damaged.raw,'');assert.ok(damaged.error);
+    stored=first;assert.equal(saveProfile(damaged.profile,damaged.raw),null);assert.equal(stored,first);assert.equal(writes,2);
+    globalThis.localStorage.getItem=()=>{throw new Error('Access denied');};
+    assert.throws(()=>saveProfile(initial.profile,first),/Access denied/);assert.equal(stored,first);assert.equal(writes,2);
   } finally {if(previous===undefined)delete globalThis.localStorage;else globalThis.localStorage=previous;}
 });
 

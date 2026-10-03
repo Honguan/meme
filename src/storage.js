@@ -31,9 +31,14 @@ export function loadProfile() {
   let raw = null;
   try {
     raw = localStorage.getItem(STORAGE_KEY);
-    if (raw !== null) return { profile: parseProfile(JSON.parse(raw)), error: '' };
+    if (raw !== null) return { profile: parseProfile(JSON.parse(raw)), error: '', raw };
   } catch { return { profile: freshProfile(), error: '存檔無法讀取，已載入預設卡組。原始存檔尚未覆寫。', raw }; }
-  return { profile: freshProfile(), error: '' };
+  return { profile: freshProfile(), error: '', raw };
 }
 export function freshProfile() { return { version: 1, custom: [], web: [], deck: [...DEFAULT_DECK], decks: [], stats: { wins: 0, losses: 0, games: 0 } }; }
-export function saveProfile(profile) { localStorage.setItem(STORAGE_KEY, JSON.stringify(profile)); }
+export function saveProfile(profile, expectedRaw) {
+  if (expectedRaw !== undefined && localStorage.getItem(STORAGE_KEY) !== expectedRaw) return null;
+  const raw = JSON.stringify(profile);
+  localStorage.setItem(STORAGE_KEY, raw);
+  return raw;
+}

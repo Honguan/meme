@@ -359,6 +359,7 @@ const rows = `
 卡組包含無效卡牌或超過 30 張|Deck contains invalid cards or exceeds 30 cards|無効なカードがあるか、30 枚を超えています|El mazo contiene cartas no válidas o supera las 30 cartas
 存檔無法讀取，已載入預設卡組。原始存檔尚未覆寫。|Save could not be read. Default deck loaded; original save has not been overwritten.|セーブを読み込めず、標準デッキを読み込みました。元のセーブは上書きしていません。|No se pudo leer la partida. Se cargó el mazo predeterminado sin sobrescribir el guardado original.
 瀏覽器儲存空間不足，請匯出卡組備份|Browser storage unavailable. Export your deck as a backup.|ブラウザーに保存できません。デッキをエクスポートして保管してください。|No hay almacenamiento disponible. Exporta el mazo como copia de seguridad.
+存檔已在其他分頁更新，請先匯出備份並重新載入|Save changed in another tab. Export a backup before reloading.|別のタブでセーブが更新されました。再読み込み前にバックアップをエクスポートしてください。|El guardado cambió en otra pestaña. Exporta una copia de seguridad antes de recargar.
 卡牌類型或陣營無效|Invalid card type or faction|カード種別または陣営が無効です|Tipo de carta o facción no válido
 名稱需為 1 至 72 字|Name must contain 1–72 characters|名前は 1～72 文字です|El nombre debe tener entre 1 y 72 caracteres
 圖片必須是 HTTPS 網址|Image must use an HTTPS URL|画像は HTTPS URL にしてください|La imagen debe usar una URL HTTPS

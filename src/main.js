@@ -20,7 +20,8 @@ const icon = (name, cls = '') => `<i data-lucide="${name}" class="${cls}" aria-h
 const drawIcons = () => createIcons({ icons, attrs: { 'stroke-width': 1.8 } });
 const loaded = loadProfile();
 let profile = loaded.profile;
-let recoveryRaw = loaded.raw ?? null;
+let recoveryRaw = loaded.error ? loaded.raw ?? null : null;
+let persistedRaw = loaded.raw ?? null;
 let catalog = collect();
 let game = createGame({ catalog, deck: validDeck() });
 let screen = 'battle', arena, query = '', filter = 'all', origin = 'all', visible = 24, mute = true, audio, counted = false;
@@ -91,7 +92,11 @@ function matchmakingDialog() {
 }
 function persist(next = profile, replace = false) {
   if (recoveryRaw !== null && !replace) { recoveryDialog(); return false; }
-  try { saveProfile(next); recoveryRaw=null; const changed=next.custom!==profile.custom||next.web!==profile.web; profile=next; if(changed)catalog=collect(); return true; } catch { toast('瀏覽器儲存空間不足，請匯出卡組備份'); return false; }
+  try {
+    const raw=saveProfile(next,persistedRaw);
+    if(raw===null){toast('存檔已在其他分頁更新，請先匯出備份並重新載入');return false;}
+    persistedRaw=raw;recoveryRaw=null;const changed=next.custom!==profile.custom||next.web!==profile.web;profile=next;if(changed)catalog=collect();return true;
+  } catch { toast('瀏覽器儲存空間不足，請匯出卡組備份'); return false; }
 }
 function recoveryDialog() {
   openDialog(`<div class="dialog-heading"><h2>存檔無法讀取</h2><p>原始存檔已保留。覆寫後無法還原，請先下載原始存檔。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="export-recovery">${icon('download')} 下載原始存檔</button><button class="quiet-button" data-action="import">${icon('upload')} 匯入</button><button class="primary-button" id="confirm-reset-save">${icon('refresh-cw')} 覆寫為預設卡組</button></div>`, 'small-modal save-recovery');
