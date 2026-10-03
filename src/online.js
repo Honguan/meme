@@ -2,7 +2,7 @@ const KEY = 'meme-clash-online';
 
 export class MatchClient {
   constructor(onState, onError) {
-    this.onState = onState; this.onError = onError; this.pending = false;
+    this.onState = onState; this.onError = onError; this.pending = false; this.leaving = false;
     this.chain = Promise.resolve();
     try { this.token = sessionStorage.getItem(KEY); } catch {}
   }
@@ -15,8 +15,10 @@ export class MatchClient {
   }
   send(action, data = {}) {
     clearTimeout(this.timer);
+    if (action === 'leave' && this.token) this.leaving = true;
     const task = async () => {
       if (!this.token) return;
+      if (this.leaving) { action = 'leave'; data = {}; }
       this.pending = action !== 'state';
       try {
         const response = await fetch(`/api/match/${action}`, { method: action === 'state' ? 'GET' : 'POST',
@@ -25,7 +27,7 @@ export class MatchClient {
         const state = await response.json();
         if (!response.ok) throw new Error(state.error || '匹配服務暫時無法連線');
         if (state.status === 'idle') {
-          this.token = null;
+          this.token = null; this.leaving = false;
           try { sessionStorage.removeItem(KEY); } catch {}
         }
         this.pending = false; this.onState(state);

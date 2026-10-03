@@ -161,6 +161,56 @@ test('two independent players match, deploy, replay the same battle and reconnec
   } finally {await a.setOffline(false);await leave(first);await leave(second);await a.close();await b.close();}
 });
 
+test('confirmed departures retry disconnects, unavailable service and conflicts without losing the leave intent',async({page,browser,baseURL})=>{
+  test.skip(!['localhost','127.0.0.1','[::1]'].includes(new URL(baseURL).hostname),'Departure recovery uses only the local test database.');
+  const context=await browser.newContext({viewport:{width:390,height:844}}),peer=await context.newPage();
+  let attempts=0,committed;
+  try {
+    await prepare(page);await prepare(peer);
+    const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+    await join(page);await join(peer);
+    await expect(page.locator('#online-status')).toContainText('輪到你部署');
+    await expect(peer.locator('#online-status')).toContainText('等待對手部署');
+    await page.route('**/api/match/leave',async route=>{
+      attempts++;
+      if(attempts===1)return route.abort('internetdisconnected');
+      if(attempts<4)return route.fulfill({status:attempts===2?503:409,contentType:'application/json',body:JSON.stringify({error:attempts===2?'匹配服務暫時無法連線':'對局已更新，請重試'})});
+      if(attempts===4) {
+        expect((await route.fetch()).status()).toBe(200);committed=await state(peer);
+        return route.abort('failed');
+      }
+      return route.continue();
+    });
+    await page.getByRole('button',{name:'離開對局',exact:true}).click();
+    await page.getByRole('button',{name:'確認離開',exact:true}).click();
+    await expect(page.locator('#online-status')).toHaveText('連線中斷，正在重試');
+    await expect(page.getByRole('button',{name:'匹配對戰',exact:true})).toBeVisible({timeout:15000});
+    expect(attempts).toBe(5);
+    expect(await page.evaluate(()=>sessionStorage.getItem('meme-clash-online'))).toBeNull();
+    expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+    await expect(peer.getByRole('heading',{name:'這局，你贏了！'})).toBeVisible();
+    const after=await state(peer);expect(after.game.phase).toBe('over');expect(after.game.winner).toBe(committed.side);
+    expect(after.game.winner).toBe(committed.game.winner);expect(after.version).toBe(committed.version);
+    await page.unroute('**/api/match/leave');await join(page);
+    await expect(page.locator('#online-status')).toHaveText('尋找對手中');
+    await page.getByRole('button',{name:'取消匹配',exact:true}).click();
+    await expect(page.getByRole('button',{name:'匹配對戰',exact:true})).toBeVisible();
+  } finally {await page.unroute('**/api/match/leave');await leave(page);await leave(peer);await context.close();}
+});
+
+test('queue cancellation retries a lost request until the ticket is removed',async({page,baseURL})=>{
+  test.skip(!['localhost','127.0.0.1','[::1]'].includes(new URL(baseURL).hostname),'Queue recovery uses only the local test database.');
+  let attempts=0;
+  try {
+    await prepare(page);await join(page);await expect(page.locator('#online-status')).toHaveText('尋找對手中');
+    await page.route('**/api/match/leave',route=>++attempts===1?route.abort('internetdisconnected'):route.continue());
+    await page.getByRole('button',{name:'取消匹配',exact:true}).click();
+    await expect(page.locator('#online-status')).toHaveText('連線中斷，正在重試');
+    await expect(page.getByRole('button',{name:'匹配對戰',exact:true})).toBeVisible({timeout:10000});
+    expect(attempts).toBe(2);expect(await page.evaluate(()=>sessionStorage.getItem('meme-clash-online'))).toBeNull();
+  } finally {await page.unroute('**/api/match/leave');await leave(page);}
+});
+
 test('matchmaking can be cancelled and reports an unavailable service without a fake opponent',async({page})=>{
   await prepare(page);await join(page);await expect(page.locator('#online-status')).toHaveText('尋找對手中');
   await page.getByRole('button',{name:'取消匹配',exact:true}).click();
