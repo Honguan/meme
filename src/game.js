@@ -59,7 +59,7 @@ export function randomWorldDeck(catalog = CATALOG, seed = Date.now()) {
   return { tag, deck:[...shuffle(pool,rng).slice(0,12),'tape','imagination','stonks','handshake','reverse','safe','suit','fusion'] };
 }
 export function createDailyGame(catalog = CATALOG, date = new Date().toISOString().slice(0,10)) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date))) throw new Error('挑戰日期無效');
+  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0,10) !== date) throw new Error('挑戰日期無效');
   const seed = Number(date.replaceAll('-',''));
   const game = createGame({ catalog, deck:randomWorldDeck(catalog,seed).deck, opponentDeck:randomWorldDeck(catalog,seed+1).deck,
     field:FIELDS[seed%FIELDS.length].id, seed, mode:'ai', goal:'classic' });

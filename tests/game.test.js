@@ -168,6 +168,16 @@ test('global random decks are valid sets and daily opponents, hands and fields a
   assert.throws(()=>createGame({opponentDeck:['missing']}));
 });
 
+test('daily challenges reject impossible calendar dates and accept real leap days',()=>{
+  for(const date of ['2026-02-29','2026-02-31','1900-02-29','2026-04-31','2026-13-01','2026-01-00','2026-10-04T00:00:00Z',null,42,['2026-10-04']]){
+    assert.throws(()=>createDailyGame(CATALOG,date),{message:'挑戰日期無效'});
+  }
+  for(const date of ['2024-02-29','2000-02-29','2026-02-28','2026-12-31']){
+    const a=createDailyGame(CATALOG,date),b=createDailyGame(CATALOG,date);
+    assert.equal(a.challenge,date);assert.deepEqual(a.players,b.players);assert.deepEqual(a.units,b.units);assert.equal(a.field,b.field);
+  }
+});
+
 test('daily global matchups finish complete games without stalled rounds',()=>{
   for(const date of ['2026-10-02','2026-10-03','2026-10-04']){
     const g=createDailyGame(CATALOG,date);
