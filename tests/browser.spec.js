@@ -3,6 +3,22 @@ import { freshProfile, parseProfile } from '../src/storage.js';
 import { CATALOG } from '../src/catalog.js';
 import { DRAFT_KEY } from '../src/draft.js';
 
+test('discarding a new card draft confirms first and clears only after storage removal succeeds',async({page})=>{
+  await page.goto('/');await page.locator('[data-nav="workshop"]').click();
+  await page.locator('#card-form [name="name"]').fill('準備放棄的草稿');await page.locator('#card-form [name="hp"]').fill('');
+  const profile=await page.evaluate(()=>localStorage.getItem('meme-clash-v1')),draft=await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY);
+  await page.getByRole('button',{name:'清除草稿',exact:true}).click();await page.getByRole('button',{name:'取消',exact:true}).click();
+  expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBe(draft);await expect(page.locator('#card-form [name="name"]')).toHaveValue('準備放棄的草稿');
+  await page.evaluate(key=>{window.clearFails=true;const remove=Storage.prototype.removeItem;Storage.prototype.removeItem=function(k){if(k===key&&window.clearFails)throw new Error('denied');return remove.call(this,k);};},DRAFT_KEY);
+  await page.getByRole('button',{name:'清除草稿',exact:true}).click();await page.locator('#confirm-clear-draft').click();await expect(page.locator('#toast')).toContainText('無法清除暫存草稿');
+  await expect(page.getByRole('heading',{name:'清除這份草稿？',exact:true})).toBeVisible();expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBe(draft);
+  await page.keyboard.press('Escape');await expect(page.locator('#card-form [name="name"]')).toHaveValue('準備放棄的草稿');await expect(page.locator('#card-form [name="hp"]')).toHaveValue('');
+  await page.evaluate(()=>window.clearFails=false);await page.setViewportSize({width:390,height:844});
+  await page.getByRole('button',{name:'清除草稿',exact:true}).click();await page.screenshot({path:'.artifacts/clear-draft-mobile.png'});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.locator('#confirm-clear-draft').click();
+  await expect(page.locator('#card-form [name="name"]')).toHaveValue('');await expect(page.locator('#card-form [name="hp"]')).toHaveValue('12');expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBeNull();
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(profile);await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(page.locator('#card-form [name="name"]')).toHaveValue('');
+});
+
 test('card drafts restore blank values and zero effects after reload without touching profiles',async({page,context})=>{
   await page.goto('/');const stored=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
   await page.locator('[data-nav="workshop"]').click();
@@ -62,12 +78,14 @@ test('draft storage failures preserve editor memory and malformed drafts remain 
   await page.locator(`[data-card="${id}"]`).click();await page.locator(`[data-edit="${id}"]`).click();
   await page.evaluate(key=>{const set=Storage.prototype.setItem,remove=Storage.prototype.removeItem;Storage.prototype.setItem=function(k,v){if(k===key)throw new Error('quota');return set.call(this,k,v);};Storage.prototype.removeItem=function(k){if(k===key)throw new Error('denied');return remove.call(this,k);};},DRAFT_KEY);
   await page.locator('#card-form [name="name"]').fill('取消失敗的編輯');await expect(page.locator('#toast')).toContainText('無法暫存草稿');await page.locator('[data-action="cancel-edit"]').click();await expect(page.locator('#toast')).toContainText('無法清除暫存草稿');
+  await expect(page.getByRole('heading',{name:'編輯卡牌',exact:true})).toBeVisible();await expect(page.locator('#card-form [name="name"]')).toHaveValue('取消失敗的編輯');
   await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(page.getByRole('heading',{name:'編輯卡牌',exact:true})).toBeVisible();await expect(page.locator('#card-form [name="name"]')).toHaveValue('再次暫存');
   await page.locator('[data-action="cancel-edit"]').click();await page.locator('#card-form [name="name"]').fill('不可信輸入');
   await page.evaluate(key=>{const draft=JSON.parse(sessionStorage.getItem(key));draft.card.cost=draft.card.speed=draft.card.attack=draft.card.hp=draft.card.effects[0].amount='" onfocus="window.injected=1';sessionStorage.setItem(key,JSON.stringify(draft));},DRAFT_KEY);
   await page.reload();await page.locator('[data-nav="workshop"]').click();expect(await page.locator('#card-form [onfocus]').count()).toBe(0);expect(await page.evaluate(()=>window.injected)).toBeUndefined();
   await page.evaluate(key=>sessionStorage.setItem(key,'{broken'),DRAFT_KEY);await page.reload();await expect(page.locator('#toast')).toContainText('無法讀取暫存草稿');await page.locator('[data-nav="workshop"]').click();await expect(page.locator('#card-form [name="name"]')).toHaveValue('');
   expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBe('{broken');
+  const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));await page.getByRole('button',{name:'清除草稿',exact:true}).click();await page.locator('#confirm-clear-draft').click();expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBeNull();expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
 });
 
 test('card sources keep imported library details fresh and active battle previews unchanged',async({page})=>{

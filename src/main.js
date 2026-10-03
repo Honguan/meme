@@ -108,6 +108,10 @@ function storeCardDraft() {
   draftFailed=!ok;
   return ok;
 }
+function clearCardDraft() {
+  if(!saveDraft(null)){toast('無法清除暫存草稿，重新整理可能再次出現');return false;}
+  editingId='';editSource='';formBase=null;draftFailed=false;modal.close();render();return true;
+}
 function recoveryDialog() {
   openDialog(`<div class="dialog-heading"><h2>存檔無法讀取</h2><p>原始存檔已保留。覆寫後無法還原，請先下載原始存檔。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="export-recovery">${icon('download')} 下載原始存檔</button><button class="quiet-button" data-action="import">${icon('upload')} 匯入</button><button class="primary-button" id="confirm-reset-save">${icon('refresh-cw')} 覆寫為預設卡組</button></div>`, 'small-modal save-recovery');
   $('#confirm-reset-save').onclick=()=>{if(!persist(profile,true))return;modal.close();render();};
@@ -235,7 +239,7 @@ function workshopHTML() {
   return `<main class="workshop-page"><div class="page-heading"><h1>卡組工坊</h1><span class="small-count">${profile.custom.length} 張自訂卡牌</span></div>
     <div class="workshop-layout"><section class="workshop-main"><div class="preset-band"><h2>卡組流派</h2><div class="preset-options">${Object.entries(PRESETS).map(([id,p],i)=>`<button data-preset="${id}" class="preset"><span class="preset-icon preset-${i}">${icon(i===0?'swords':i===1?'flame':'heart')}</span><span><b>${p.name}</b><small>${p.deck.length} 張卡牌</small></span>${icon('arrow-up-right')}</button>`).join('')}</div></div>
     <div class="extra-play"><button class="quiet-button" data-action="random-deck">${icon('refresh-cw')} 全球隨機套裝</button><button class="quiet-button" data-action="daily">${icon('trophy')} 每日挑戰</button></div>
-    <form id="card-form"><div class="form-heading"><h2>${editingId?'編輯卡牌':'創作卡牌'}</h2><span>${editingId?'EDIT CARD':`NEW CARD / ${String(profile.custom.length+1).padStart(3,'0')}`}</span>${editingId?`<button class="icon-button" type="button" data-action="cancel-edit" aria-label="取消編輯" title="取消編輯">${icon('x')}</button>`:''}</div>
+    <form id="card-form"><div class="form-heading"><h2>${editingId?'編輯卡牌':'創作卡牌'}</h2><span>${editingId?'EDIT CARD':`NEW CARD / ${String(profile.custom.length+1).padStart(3,'0')}`}</span><button class="icon-button" type="button" data-action="${editingId?'cancel-edit':'clear-draft'}" aria-label="${editingId?'取消編輯':'清除草稿'}" title="${editingId?'取消編輯':'清除草稿'}">${icon(editingId?'x':'trash-2')}</button></div>
     <div class="form-grid"><label class="wide">卡牌名稱<input name="name" maxlength="72" value="${esc(c.name)}" placeholder="卡牌名稱" required></label><label>類型<select name="type">${Object.entries(TYPES).map(([id,n])=>`<option value="${id}" ${c.type===id?'selected':''}>${n}</option>`).join('')}</select></label><label>陣營<select name="tag">${Object.entries(TAGS).map(([id,t])=>`<option value="${id}" ${c.tag===id?'selected':''}>${t.name}</option>`).join('')}</select></label><label>能量消耗<input name="cost" type="number" min="0" max="9" value="${esc(c.cost)}" required></label><label>碰撞速度<input name="speed" type="number" min="1" max="12" value="${esc(c.speed)}" required></label><label>攻擊力<input name="attack" type="number" min="0" max="99" value="${esc(c.attack)}" required></label><label>生命值<input name="hp" type="number" min="1" max="999" value="${typeof c.hp==='string'?esc(c.hp):Math.max(1,c.hp)}" required></label><label class="wide">圖片網址<input name="image" type="url" maxlength="2048" value="${esc(c.image)}" placeholder="https://…"></label><label class="wide">卡牌宣言<input name="flavor" maxlength="160" value="${esc(c.flavor)}" placeholder="台詞或備註"></label><label class="wide field-rule" ${c.type!=='field'?'hidden':''}>場地規則<select name="field">${FIELDS.map(f=>`<option value="${f.id}" ${c.field===f.id?'selected':''}>${f.name}：${f.description}</option>`).join('')}</select></label></div>
     <div class="form-heading effects-heading"><h3>效果連鎖</h3><button class="text-button" type="button" data-action="add-effect">${icon('plus')} 新增效果</button></div><div id="effect-rows">${c.effects.map(effectRow).join('')}</div><p class="form-error" id="form-error" role="alert"></p><button class="primary-button" type="submit">${icon(editingId?'save':'sparkles')} ${editingId?'儲存修改':'鑄造卡牌'}</button></form>
     </section>${deckSidebar()}</div></main>`;
@@ -520,7 +524,10 @@ document.addEventListener('click', e => {
     case 'recovery': recoveryDialog();break;
     case 'export-recovery': if(recoveryRaw!==null)exportProfile(recoveryRaw,'meme-clash-recovery.json');break;
     case 'import': importProfile();break;
-    case 'cancel-edit': editingId='';editSource='';formBase=null;if(!storeCardDraft())toast('無法清除暫存草稿，重新整理可能再次出現');render();break;
+    case 'cancel-edit': clearCardDraft();break;
+    case 'clear-draft':
+      openDialog(`<div class="dialog-heading"><h2>清除這份草稿？</h2><p>此操作無法還原。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-clear-draft">${icon('trash-2')} 清除草稿</button></div>`,'small-modal');
+      $('#confirm-clear-draft').onclick=clearCardDraft;break;
     case 'add-effect': if($('#effect-rows').children.length>=4) toast('最多 4 組效果');else {$('#effect-rows').insertAdjacentHTML('beforeend',effectRow());syncTriggers();formBase=readCardForm($('#card-form'));storeCardDraft();localize($('#effect-rows'));drawIcons();}break;
     case 'remove-effect': button.closest('.effect-row').remove();formBase=readCardForm($('#card-form'));storeCardDraft();break;
   }

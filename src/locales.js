@@ -214,6 +214,9 @@ const rows = `
 鑄造卡牌|Create card|カードを作成|Crear carta
 編輯卡牌|Edit card|カードを編集|Editar carta
 取消編輯|Cancel editing|編集をキャンセル|Cancelar edición
+清除草稿|Clear draft|下書きを削除|Borrar borrador
+清除這份草稿？|Clear this draft?|この下書きを削除しますか？|¿Borrar este borrador?
+此操作無法還原。|This cannot be undone.|この操作は取り消せません。|Esta acción no se puede deshacer.
 儲存修改|Save changes|変更を保存|Guardar cambios
 卡牌已保存|Card saved|カードを保存しました|Carta guardada
 無法暫存草稿，重新整理可能遺失|Unable to store draft; reloading may lose it|下書きを保存できません。再読み込みすると失われる可能性があります|No se pudo guardar el borrador; puede perderse al recargar
