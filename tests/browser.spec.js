@@ -1,4 +1,108 @@
 import { test, expect } from '@playwright/test';
+import { freshProfile } from '../src/storage.js';
+
+test('saved deck workshop saves, switches, overwrites, reloads, exports and deletes independently',async({page})=>{
+  await page.goto('/');await page.locator('[data-nav="workshop"]').click();
+  await page.getByLabel('卡組名稱',{exact:true}).fill('魔法工坊');await page.getByRole('button',{name:'保存卡組',exact:true}).click();
+  const first=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).decks[0]);
+  await page.locator('[data-preset="chaos"]').click();
+  await page.getByLabel('卡組名稱',{exact:true}).fill('第二組');await page.getByRole('button',{name:'保存卡組',exact:true}).click();
+  const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));
+  expect(saved.decks).toHaveLength(2);expect(saved.decks[0]).toEqual(first);expect(saved.decks[1].deck).not.toEqual(first.deck);
+  await page.getByRole('button',{name:'全球隨機套裝',exact:true}).click();await page.locator('#confirm-random').click();
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).decks)).toEqual(saved.decks);
+  await page.getByLabel('已保存卡組',{exact:true}).selectOption(first.id);
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).deck)).toEqual(first.deck);
+  await page.locator('[data-remove]').first().click();
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).decks[0])).toEqual(first);
+  await page.getByRole('button',{name:'保存卡組',exact:true}).click();await page.getByRole('button',{name:'取消',exact:true}).click();
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).decks[0])).toEqual(first);
+  await page.getByRole('button',{name:'保存卡組',exact:true}).click();await page.getByRole('button',{name:'確認覆寫',exact:true}).click();
+  const overwritten=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).decks[0]);
+  expect(overwritten.deck).toHaveLength(first.deck.length-1);
+  await page.reload();await page.locator('[data-nav="workshop"]').click();
+  await page.getByLabel('已保存卡組',{exact:true}).selectOption(saved.decks[1].id);
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).deck)).toEqual(saved.decks[1].deck);
+  await page.screenshot({path:'.artifacts/saved-decks-desktop.png',fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+  await page.screenshot({path:'.artifacts/saved-decks-mobile.png',fullPage:true});
+  const download=page.waitForEvent('download');await page.getByRole('button',{name:'匯出',exact:true}).click();
+  const stream=await (await download).createReadStream();const chunks=[];for await(const chunk of stream)chunks.push(chunk);
+  const exported=JSON.parse(Buffer.concat(chunks).toString());expect(exported.decks).toEqual([overwritten,saved.decks[1]]);
+  await page.getByRole('button',{name:'刪除已保存卡組',exact:true}).click();await page.locator('#confirm-delete-deck').click();
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).decks)).toEqual([overwritten]);
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).deck)).toEqual(saved.decks[1].deck);
+  await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(page.locator('#saved-deck option')).toHaveCount(2);
+  const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'匯入',exact:true}).click();
+  await (await chooser).setFiles({name:'decks.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(exported))});
+  await page.locator('#confirm-import').click();expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).decks)).toEqual(exported.decks);
+});
+
+test('saved deck and import quota failures preserve stored and live data until successful retry',async({page})=>{
+  const original=freshProfile();original.decks=[{id:'deck-old',name:'原始組',deck:[...original.deck]},{id:'deck-other',name:'其他組',deck:original.deck.slice(1)}];
+  await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),original);
+  await page.goto('/');await page.locator('[data-nav="workshop"]').click();
+  await page.getByLabel('已保存卡組',{exact:true}).selectOption('deck-old');
+  const list=await page.locator('.deck-list').textContent(),stored=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  await page.evaluate(()=>{window.storageFails=true;const setItem=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){if(key==='meme-clash-v1'&&window.storageFails)throw new DOMException('Quota exceeded','QuotaExceededError');return setItem.call(this,key,value);};});
+  await page.getByLabel('卡組名稱',{exact:true}).fill('失敗組');await page.getByRole('button',{name:'保存卡組',exact:true}).click();
+  await expect(page.locator('#toast')).toContainText('瀏覽器儲存空間不足');await expect(page.locator('#saved-deck option')).toHaveCount(3);
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);
+  await page.getByRole('button',{name:'刪除已保存卡組',exact:true}).click();await page.locator('#confirm-delete-deck').click();
+  await expect(page.locator('dialog')).toBeVisible();await expect(page.locator('#saved-deck option')).toHaveCount(3);
+  await page.getByRole('button',{name:'取消',exact:true}).click();
+  await page.getByLabel('已保存卡組',{exact:true}).selectOption('deck-other');await expect(page.locator('#saved-deck')).toHaveValue('deck-old');
+  expect(await page.locator('.deck-list').textContent()).toBe(list);expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);
+  const incoming=freshProfile();incoming.custom=[{id:'custom-import',name:'匯入專用卡',type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'',effects:[]}];incoming.deck[0]='custom-import';incoming.decks=[{id:'deck-import',name:'匯入組',deck:[...incoming.deck]}];
+  const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'匯入',exact:true}).click();
+  await (await chooser).setFiles({name:'incoming.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(incoming))});
+  await page.locator('#confirm-import').click();await expect(page.locator('dialog')).toBeVisible();
+  await expect(page.locator('#toast')).toContainText('瀏覽器儲存空間不足');expect(await page.locator('.deck-list').textContent()).toBe(list);
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);
+  await page.getByRole('button',{name:'取消',exact:true}).click();await page.locator('[data-nav="collection"]').click();
+  await page.getByRole('searchbox',{name:'搜尋卡牌'}).fill('匯入專用卡');await expect(page.locator('.catalog-grid .meme-card')).toHaveCount(0);
+  await page.locator('[data-nav="workshop"]').click();await page.evaluate(()=>window.storageFails=false);
+  await page.getByRole('button',{name:'保存卡組',exact:true}).click();await expect(page.locator('#saved-deck option')).toHaveCount(4);
+  const retryChooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'匯入',exact:true}).click();
+  await (await retryChooser).setFiles({name:'incoming.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(incoming))});
+  await page.locator('#confirm-import').click();await expect(page.locator('dialog')).toBeHidden();await expect(page.locator('.deck-list')).toContainText('匯入專用卡');
+});
+
+test('refreshing a full web library preserves active and saved deck references across reload',async({page})=>{
+  const profile=freshProfile();profile.web=Array.from({length:1000},(_,i)=>({id:`workshop-${i}`,name:`Web card ${i}`,url:`https://i.imgflip.com/workshop-${i}.jpg`}));
+  profile.deck[0]='web-workshop-0';profile.decks=[{id:'deck-web',name:'網路保存組',deck:['web-workshop-1']}];
+  await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);
+  await page.route('https://api.imgflip.com/get_memes',route=>route.fulfill({json:{success:true,data:{memes:[{id:'workshop-new',name:'New web card',url:'https://i.imgflip.com/workshop-new.jpg'}]}}}));
+  await page.goto('/');await page.locator('[data-nav="collection"]').click();await page.getByRole('button',{name:'更新網路卡庫',exact:true}).click();
+  await expect(page.locator('#toast')).toContainText('已更新 1 個模板');
+  const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));
+  expect(saved.web).toHaveLength(1000);expect(saved.web.map(m=>m.id)).toEqual(expect.arrayContaining(['workshop-0','workshop-1','workshop-new']));
+  expect(saved.web.map(m=>m.id)).not.toContain('workshop-2');expect(saved.decks).toEqual(profile.decks);expect(saved.deck).toEqual(profile.deck);
+  await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(page.locator('.deck-list')).toContainText('Web card 0');
+  await page.getByLabel('已保存卡組',{exact:true}).selectOption('deck-web');await expect(page.locator('.deck-list')).toContainText('Web card 1');
+});
+
+test('custom card creation at the profile limit preserves all 1000 cards across reload',async({page})=>{
+  const profile=freshProfile();profile.custom=Array.from({length:1000},(_,i)=>({id:`custom-limit-${i}`,name:`Limit card ${i}`,type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'',effects:[]}));
+  await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);
+  await page.goto('/');await page.locator('[data-nav="workshop"]').click();const stored=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  await page.getByLabel('卡牌名稱',{exact:true}).fill('超額卡牌');await page.getByRole('button',{name:'鑄造卡牌',exact:true}).click();
+  await expect(page.locator('#form-error')).toHaveText('最多保存 1000 張自訂卡牌');expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);
+  await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(page.locator('.small-count')).toHaveText('1000 張自訂卡牌');
+});
+
+test('deleting a custom card removes it from every saved deck while preserving draft names',async({page})=>{
+  const profile=freshProfile();profile.custom=[{id:'custom-deck',name:'移除測試',type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'',effects:[]}];
+  profile.deck[0]='custom-deck';profile.decks=[{id:'deck-custom',name:'保留名稱',deck:['custom-deck']},{id:'deck-full',name:'完整組',deck:[...profile.deck]}];
+  await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);
+  await page.goto('/');await page.locator('[data-nav="collection"]').click();await page.getByRole('searchbox',{name:'搜尋卡牌'}).fill('移除測試');
+  await page.locator('.catalog-grid .meme-card').click();await page.getByRole('button',{name:'刪除自訂卡',exact:true}).click();await page.locator('#confirm-delete').click();
+  const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));
+  expect(saved.custom).toEqual([]);expect(saved.deck).not.toContain('custom-deck');expect(saved.decks[0]).toEqual({id:'deck-custom',name:'保留名稱',deck:[]});expect(saved.decks[1].deck).not.toContain('custom-deck');
+  await page.reload();await page.locator('[data-nav="workshop"]').click();await page.getByLabel('已保存卡組',{exact:true}).selectOption('deck-custom');await expect(page.locator('.deck-count')).toHaveText('0/30');
+  await page.getByRole('button',{name:'保存卡組',exact:true}).click();await expect(page.locator('#toast')).toContainText('卡組至少 10 張');
+});
 
 async function dragDeck(page,type='monster') {
   const custom=Array.from({length:10},(_,i)=>({id:`custom-drag-${i}`,name:`拖曳測試 ${i}`,type:i?type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'',effects:[{trigger:type==='trap'&&i?'hit':'play',action:type==='spell'&&i?'damage':'shield',target:type==='spell'&&i?'enemy':'self',amount:3}]}));

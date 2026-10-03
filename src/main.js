@@ -1,4 +1,4 @@
-import { createIcons, Swords, Layers, Hammer, Search, SlidersHorizontal, ArrowUpRight, ArrowRight, ArrowLeft, Plus, Minus, X, Zap, Shield, Heart, Sparkles, Volume2, VolumeX, RotateCcw, Github, Download, Upload, RefreshCw, Trash2, Check, ChevronRight, Target, Flame, Trophy, Palette } from 'lucide';
+import { createIcons, Swords, Layers, Hammer, Search, SlidersHorizontal, ArrowUpRight, ArrowRight, ArrowLeft, Plus, Minus, X, Zap, Shield, Heart, Sparkles, Volume2, VolumeX, RotateCcw, Github, Download, Upload, RefreshCw, Trash2, Check, ChevronRight, Target, Flame, Trophy, Palette, Save } from 'lucide';
 import { CATALOG, TYPES, TAGS, FIELDS, ACTIONS, TARGETS, TRIGGERS, PRESETS, WORLD_COVERAGE, templateCards, validateCustom, effectText } from './catalog.js';
 import { ARCHETYPES } from './semantics.js';
 import { createGame, createDailyGame, randomWorldDeck, playCard, playError, units, combos, planAI, finishRound, isUnit, moveUnit } from './game.js';
@@ -12,7 +12,7 @@ import { loadProfile, saveProfile, parseProfile } from './storage.js';
 import './style.css';
 import './duel.css';
 
-const icons = { Swords, Layers, Hammer, Search, SlidersHorizontal, ArrowUpRight, ArrowRight, ArrowLeft, Plus, Minus, X, Zap, Shield, Heart, Sparkles, Volume2, VolumeX, RotateCcw, Github, Download, Upload, RefreshCw, Trash2, Check, ChevronRight, Target, Flame, Trophy, Palette };
+const icons = { Swords, Layers, Hammer, Search, SlidersHorizontal, ArrowUpRight, ArrowRight, ArrowLeft, Plus, Minus, X, Zap, Shield, Heart, Sparkles, Volume2, VolumeX, RotateCcw, Github, Download, Upload, RefreshCw, Trash2, Check, ChevronRight, Target, Flame, Trophy, Palette, Save };
 document.documentElement.dataset.theme=loadTheme();
 const $ = (s, root = document) => root.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -24,6 +24,7 @@ let catalog = collect();
 let game = createGame({ catalog, deck: validDeck() });
 let screen = 'battle', arena, query = '', filter = 'all', origin = 'all', visible = 24, mute = true, audio, counted = false;
 let handoff = false, toastTimer, formBase = null;
+let savedDeckId = '', deckName = '';
 let selected = null, dragging = false, cancelDrag;
 let online = null, onlineBusy = false, replaying = false, replayKey = '';
 const network = new MatchClient(receiveOnline, message => {
@@ -87,7 +88,27 @@ async function onlineCommand(action,data={}) {
 function matchmakingDialog() {
   openDialog(`<div class="dialog-heading"><h2>線上匹配</h2><p>自由卡組 · 20 LP · 每次部署 90 秒</p><p>自訂卡可參戰；場地採先進入佇列的玩家設定。</p></div><form id="online-form"><label>場地<select name="field">${FIELDS.map(f=>`<option value="${f.id}" ${game.field===f.id?'selected':''}>${f.name}</option>`).join('')}</select></label><p class="form-error" id="online-error" role="alert"></p><button class="primary-button" type="submit">${icon('swords')} 開始匹配</button></form>`,'small-modal');
 }
-function persist() { try { saveProfile(profile); return true; } catch { toast('瀏覽器儲存空間不足，請匯出卡組備份'); return false; } }
+function persist(next = profile) { try { saveProfile(next); profile = next; catalog = collect(); return true; } catch { toast('瀏覽器儲存空間不足，請匯出卡組備份'); return false; } }
+function saveDeck() {
+  const name = $('#deck-name').value.trim();
+  if (!name || name.length > 48) return toast('卡組名稱需為 1 至 48 字');
+  if (profile.deck.length < 10 || !profile.deck.some(id => catalog.find(c => c.id === id)?.type === 'monster')) return toast('卡組至少 10 張，且需包含角色卡');
+  if (profile.deck.length > 30) return toast('卡組已滿：最多 30 張');
+  if (profile.deck.some(id => profile.deck.filter(card => card === id).length > 2)) return toast('同一張卡最多放入 2 張');
+  const existing = profile.decks.find(saved => saved.id === savedDeckId && saved.name === name) || profile.decks.find(saved => saved.name === name);
+  if (!existing && profile.decks.length >= 20) return toast('最多保存 20 組卡組');
+  const save = () => {
+    let id = existing?.id;
+    if (!id) do { id = `deck-${crypto.randomUUID()}`; } while (profile.decks.some(saved => saved.id === id));
+    const saved = { id, name, deck: [...profile.deck] };
+    const decks = existing ? profile.decks.map(item => item.id === id ? saved : item) : [...profile.decks, saved];
+    if (!persist({ ...profile, decks })) return;
+    savedDeckId = id; deckName = name; modal.close(); render(); toast('卡組已保存');
+  };
+  if (!existing) return save();
+  openDialog(`<div class="dialog-heading"><h2>覆寫已保存卡組？</h2><p data-original>${esc(name)}</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-save-deck">${icon('save')} 確認覆寫</button></div>`, 'small-modal');
+  $('#confirm-save-deck').onclick = save;
+}
 function toast(message) { clearTimeout(toastTimer); $('#toast').textContent = tr(message); $('#toast').classList.add('show'); toastTimer = setTimeout(() => $('#toast').classList.remove('show'), 4200); }
 function sound(kind = 'click') {
   if (mute) return;
@@ -172,7 +193,8 @@ function collectionHTML() {
 }
 function deckSidebar() {
   const count = new Map(); profile.deck.forEach(id=>count.set(id,(count.get(id)||0)+1));
-  return `<aside class="deck-sidebar"><div class="aside-title"><h2>我的卡組</h2><b class="deck-count ${profile.deck.length<10?'warning':''}">${profile.deck.length}<small>/30</small></b></div><div class="deck-list">${[...count].map(([id,n])=>{const c=catalog.find(c=>c.id===id);return c?`<div class="deck-row">${image(c)}<span><b>${esc(c.name)}</b><small>${TYPES[c.type]} · ${c.cost} 能量</small></span><b>×${n}</b><button class="icon-button small" data-remove="${esc(id)}" title="移除一張" aria-label="移除 ${esc(c.name)}">${icon('minus')}</button></div>`:'';}).join('')||'<p class="empty-state">尚未加入卡牌</p>'}</div><button class="primary-button" data-action="new">${icon('swords')} 使用卡組對決</button><div class="deck-tools"><button class="quiet-button" data-action="export">${icon('download')} 匯出</button><button class="quiet-button" data-action="import">${icon('upload')} 匯入</button></div></aside>`;
+  const savedControls = `<div class="saved-decks"><label for="saved-deck">已保存卡組</label><div class="saved-deck-row"><select id="saved-deck"><option value="">選擇卡組</option>${profile.decks.map(saved=>`<option data-original value="${esc(saved.id)}" ${saved.id===savedDeckId?'selected':''}>${esc(saved.name)}</option>`).join('')}</select><button class="icon-button" data-action="delete-deck" title="刪除已保存卡組" aria-label="刪除已保存卡組" ${savedDeckId?'':'disabled'}>${icon('trash-2')}</button></div><label for="deck-name">卡組名稱</label><div class="saved-deck-row"><input id="deck-name" value="${esc(deckName)}" maxlength="48" autocomplete="off"><button class="icon-button" data-action="save-deck" title="保存卡組" aria-label="保存卡組">${icon('save')}</button></div></div>`;
+  return `<aside class="deck-sidebar"><div class="aside-title"><h2>我的卡組</h2><b class="deck-count ${profile.deck.length<10?'warning':''}">${profile.deck.length}<small>/30</small></b></div>${savedControls}<div class="deck-list">${[...count].map(([id,n])=>{const c=catalog.find(c=>c.id===id);return c?`<div class="deck-row">${image(c)}<span><b>${esc(c.name)}</b><small>${TYPES[c.type]} · ${c.cost} 能量</small></span><b>×${n}</b><button class="icon-button small" data-remove="${esc(id)}" title="移除一張" aria-label="移除 ${esc(c.name)}">${icon('minus')}</button></div>`:'';}).join('')||'<p class="empty-state">尚未加入卡牌</p>'}</div><button class="primary-button" data-action="new">${icon('swords')} 使用卡組對決</button><div class="deck-tools"><button class="quiet-button" data-action="export">${icon('download')} 匯出</button><button class="quiet-button" data-action="import">${icon('upload')} 匯入</button></div></aside>`;
 }
 function effectRow(value = { trigger: 'play', action: 'shield', target: 'self', amount: 3 }) {
   return `<div class="effect-row"><label>時機<select name="trigger">${Object.entries(TRIGGERS).map(([key,name])=>`<option value="${key}" ${key===value.trigger?'selected':''}>${name}</option>`).join('')}</select></label><label>效果<select name="action">${Object.entries(ACTIONS).map(([key,name])=>`<option value="${key}" ${key===value.action?'selected':''}>${name}</option>`).join('')}</select></label><label>對象<select name="target">${Object.entries(TARGETS).map(([key,name])=>`<option value="${key}" ${key===value.target?'selected':''}>${name}</option>`).join('')}</select></label><label>數值<input name="amount" type="number" min="1" max="99" value="${value.amount}" required></label><button class="icon-button" type="button" data-action="remove-effect" aria-label="移除此效果" title="移除此效果">${icon('x')}</button></div>`;
@@ -225,7 +247,7 @@ function showCard(id, handIndex = null) {
   openDialog(`<div class="card-detail"><div class="detail-art" style="--tag:${TAGS[c.tag].color}">${image(c)}</div><div class="detail-body"><span class="eyebrow" style="color:${TAGS[c.tag].color}">${TYPES[c.type]} / ${TAGS[c.tag].name}</span><h2>${esc(c.name)}</h2><p class="flavor" ${c.origin==='自訂'?'data-original':''}>${esc(c.flavor)}</p><div class="detail-stats"><span>${icon('zap')} ${c.cost} 能量</span>${isUnit(c)?`<span>${icon('swords')} ${c.attack}</span><span>${icon('heart')} ${c.hp}</span>`:''}</div><div class="effect-detail">${c.type==='fusion'?'<p>消耗兩名同陣營角色；繼承素材陣營及一半總攻擊。</p>':''}<p>${esc(effectText(c))}</p></div>
     <section class="modal-preview"><button class="quiet-button" data-preview="${esc(c.id)}">${icon('sparkles')} 播放效果演示</button><div id="modal-preview-stage" hidden></div></section>
     ${isUnit(c)?`<section class="set-detail" aria-label="連攜套裝">${setRulesHTML(c.tag)}<p>${c.type==='fusion'?'融合後改用素材陣營的套裝；兩份素材合為 1 件。':'同一方存活的同陣營角色各計 1 件；3 件效果與 2 件效果疊加。'}</p></section>`:''}
-    ${handIndex!==null?`<label class="target-select">優先目標<select id="play-target"><option value="">自動選擇</option>${game.units.filter(u=>u.hp>0).map(u=>`<option value="${u.uid}">${u.side===game.active?'友軍':'敵軍'} · ${esc(u.name)} (${u.hp} HP)</option>`).join('')}</select></label><p class="form-error">${esc(error)}</p><button class="primary-button" data-play="${handIndex}" ${error?'disabled':''}>${icon(c.type==='monster'?'swords':'sparkles')} ${c.type==='monster'?'召喚角色':c.type==='trap'?'設置陷阱':c.type==='fusion'?'融合召喚':'發動卡牌'}</button>`:
+    ${handIndex!==null?`<label class="target-select">優先目標<select id="play-target"><option value="">自動選擇</option>${game.units.filter(u=>u.hp>0&&!playError(game,game.active,handIndex,u.uid)).map(u=>`<option value="${u.uid}">${u.side===game.active?'友軍':'敵軍'} · ${esc(u.name)} (${u.hp} HP)</option>`).join('')}</select></label><p class="form-error">${esc(error)}</p><button class="primary-button" data-play="${handIndex}" ${error?'disabled':''}>${icon(c.type==='monster'?'swords':'sparkles')} ${c.type==='monster'?'召喚角色':c.type==='trap'?'設置陷阱':c.type==='fusion'?'融合召喚':'發動卡牌'}</button>`:
     `<button class="primary-button" data-add="${esc(c.id)}">${icon('plus')} 加入卡組</button><button class="quiet-button" data-template="${esc(c.id)}">${icon('hammer')} 以此為範本</button>${c.origin==='自訂'?`<button class="text-button danger" data-delete="${esc(c.id)}">${icon('trash-2')} 刪除自訂卡</button>`:''}`}
     ${c.evidence?`<section class="meaning-detail"><b>梗意設計 · ${esc(ARCHETYPES[c.archetype]?.name || '待設定')}</b>${c.sourceName&&c.sourceName!==c.name?`<p>原始名稱：<span data-original>${esc(c.sourceName)}</span></p>`:''}<p>依據${c.evidence.field==='name'?'名稱':'來源標籤'}：<span data-original>${esc(c.evidence.value)}</span></p><p>${esc(c.flavor)}</p>${c.languages?.length?`<p>來源語言：<span data-original>${c.languages.map(code=>esc(languageNames[code] || code)).join(' · ')}</span></p>`:''}</section>`:''}
     ${c.source?`<a class="source-link" href="${esc(c.source)}" target="_blank" rel="noopener noreferrer">來源：${c.origin==='全球'?'templates.meme':'Imgflip'} ${icon('arrow-up-right')}</a>`:'<span class="source-link">玩家自訂作品</span>'}</div></div>`, 'card-modal');
@@ -266,7 +288,8 @@ function battleDone(advance = true) {
 function addToDeck(id) {
   if (profile.deck.length>=30) return toast('卡組已滿：最多 30 張');
   if (profile.deck.filter(x=>x===id).length>=2) return toast('同一張卡最多放入 2 張');
-  profile.deck.push(id); persist(); modal.close(); render(); toast('已加入卡組，下場對決生效');
+  if (!persist({ ...profile, deck: [...profile.deck, id] })) return;
+  modal.close(); render(); toast('已加入卡組，下場對決生效');
 }
 function syncTriggers() {
   const form = $('#card-form'); if (!form) return;
@@ -286,8 +309,14 @@ async function refreshCatalog(button) {
     if (!data.success || !Array.isArray(data.data?.memes)) throw new Error('卡庫資料格式無效');
     const accepted = data.data.memes.filter(m=>templateCards([m]).length).map(({id,name,url})=>({id,name,url}));
     const before = catalog.length;
-    profile.web = [...new Map([...profile.web,...accepted].map(m=>[m.id,m])).values()].slice(-1000);
-    catalog = collect(); persist(); render(); toast(`已更新 ${accepted.length} 個模板，新增 ${catalog.length-before} 張卡牌`);
+    const referenced = new Set([...profile.deck, ...profile.decks.flatMap(saved=>saved.deck)]);
+    const templates = [...new Map([...profile.web,...accepted].map(m=>[m.id,m])).values()];
+    const required = templates.filter(m=>referenced.has(templateCards([m])[0]?.id));
+    const requiredIds = new Set(required.map(m=>m.id));
+    const recent = templates.filter(m=>!requiredIds.has(m.id));
+    const web = [...required, ...recent.slice(Math.max(0,recent.length+required.length-1000))];
+    if (!persist({ ...profile, web })) return;
+    render(); toast(`已更新 ${accepted.length} 個模板，新增 ${catalog.length-before} 張卡牌`);
   } catch(e) { toast(`${e.message}，保留既有卡庫`); } finally { button.disabled = false; }
 }
 function exportProfile() {
@@ -301,8 +330,8 @@ function importProfile() {
     try {
       if (file.size > 2_000_000) throw new Error('匯入檔案不得超過 2 MB');
       const incoming = parseProfile(JSON.parse(await file.text()));
-      openDialog(`<div class="dialog-heading"><h2>匯入卡組</h2><p>${incoming.deck.length} 張卡組卡牌、${incoming.custom.length} 張自訂卡牌。匯入後取代目前卡組與自訂卡庫。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-import">${icon('upload')} 確認匯入</button></div>`, 'small-modal');
-      $('#confirm-import').onclick = () => { profile = { ...incoming, stats: profile.stats }; catalog = collect(); persist(); modal.close(); render(); toast('卡組已匯入'); };
+      openDialog(`<div class="dialog-heading"><h2>匯入卡組</h2><p>${incoming.deck.length} 張卡組卡牌、${incoming.custom.length} 張自訂卡牌、${incoming.decks.length} 組已保存卡組。匯入後取代目前卡組、已保存卡組與自訂卡庫。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-import">${icon('upload')} 確認匯入</button></div>`, 'small-modal');
+      $('#confirm-import').onclick = () => { if (!persist({ ...incoming, stats: profile.stats })) return; savedDeckId='';deckName='';modal.close();render();toast('卡組已匯入'); };
     } catch(e) { toast(`匯入失敗：${e.message}`); }
   }; input.click();
 }
@@ -412,16 +441,22 @@ document.addEventListener('click', e => {
     playFromHand(Number(button.dataset.play),$('#play-target')?.value);return;
   }
   if (button.dataset.add) return addToDeck(button.dataset.add);
-  if (button.dataset.remove) { const at=profile.deck.indexOf(button.dataset.remove); if(at>=0) profile.deck.splice(at,1); persist(); render(); return; }
+  if (button.dataset.remove) { const at=profile.deck.indexOf(button.dataset.remove); if(at>=0&&persist({...profile,deck:profile.deck.filter((_,i)=>i!==at)}))render(); return; }
   if (button.dataset.filter) { filter=button.dataset.filter; visible=24; render(); return; }
   if (button.dataset.template) { formBase=structuredClone(catalog.find(c=>c.id===button.dataset.template)); modal.close(); screen='workshop'; render(); return; }
-  if (button.dataset.preset) { profile.deck=[...PRESETS[button.dataset.preset].deck]; persist(); render(); toast('已套用預設卡組'); return; }
+  if (button.dataset.preset) { if(!persist({...profile,deck:[...PRESETS[button.dataset.preset].deck]}))return;savedDeckId='';deckName='';render();toast('已套用預設卡組');return; }
   if (button.dataset.delete) {
     const id=button.dataset.delete;
-    openDialog(`<div class="dialog-heading"><h2>刪除這張自訂卡？</h2><p>也會從卡組移除這張卡。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-delete">${icon('trash-2')} 刪除</button></div>`,'small-modal');
-    $('#confirm-delete').onclick=()=>{profile.custom=profile.custom.filter(c=>c.id!==id);profile.deck=profile.deck.filter(x=>x!==id);catalog=collect();persist();modal.close();render();};return;
+    openDialog(`<div class="dialog-heading"><h2>刪除這張自訂卡？</h2><p>也會從目前及所有已保存卡組移除這張卡。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-delete">${icon('trash-2')} 刪除</button></div>`,'small-modal');
+    $('#confirm-delete').onclick=()=>{if(!persist({...profile,custom:profile.custom.filter(c=>c.id!==id),deck:profile.deck.filter(x=>x!==id),decks:profile.decks.map(saved=>({...saved,deck:saved.deck.filter(x=>x!==id)}))}))return;modal.close();render();};return;
   }
   switch(button.dataset.action) {
+    case 'save-deck': saveDeck();break;
+    case 'delete-deck': {
+      const saved=profile.decks.find(item=>item.id===savedDeckId);if(!saved)break;
+      openDialog(`<div class="dialog-heading"><h2>刪除已保存卡組？</h2><p data-original>${esc(saved.name)}</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-delete-deck">${icon('trash-2')} 刪除</button></div>`,'small-modal');
+      $('#confirm-delete-deck').onclick=()=>{if(!persist({...profile,decks:profile.decks.filter(item=>item.id!==saved.id)}))return;savedDeckId='';deckName='';modal.close();render();};break;
+    }
     case 'matchmaking': matchmakingDialog();break;
     case 'leave-online':
       if(online.status!=='matched'||game.phase==='over'){void onlineCommand('leave');break;}
@@ -433,7 +468,7 @@ document.addEventListener('click', e => {
     case 'random-deck': {
       const next=randomWorldDeck(catalog);
       openDialog(`<div class="dialog-heading"><h2>全球隨機套裝</h2><p>${TAGS[next.tag].name} · 12 張全球角色 + 8 張支援卡</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-random">取代目前卡組</button></div>`,'small-modal');
-      $('#confirm-random').onclick=()=>{profile.deck=next.deck;persist();modal.close();render();toast('已套用全球隨機套裝');};break;
+      $('#confirm-random').onclick=()=>{if(!persist({...profile,deck:next.deck}))return;savedDeckId='';deckName='';modal.close();render();toast('已套用全球隨機套裝');};break;
     }
     case 'daily': {
       const date=new Date().toISOString().slice(0,10);
@@ -455,9 +490,16 @@ document.addEventListener('click', e => {
   }
 });
 document.addEventListener('input', e => {
+  if(e.target.id==='deck-name')deckName=e.target.value;
   if(e.target.id==='search') { const pos=e.target.selectionStart; query=e.target.value; visible=24; render(); const input=$('#search'); input.focus(); try {input.setSelectionRange(pos,pos);} catch {} }
 });
 document.addEventListener('change', e=>{
+  if(e.target.id==='saved-deck') {
+    const saved=profile.decks.find(item=>item.id===e.target.value);
+    if(!saved){savedDeckId='';render();return;}
+    if(!persist({...profile,deck:[...saved.deck]})){e.target.value=savedDeckId;return;}
+    savedDeckId=saved.id;deckName=saved.name;render();
+  }
   if(e.target.id==='interface-language') {
     const saved=setLocale(e.target.value);regionNames=new Intl.DisplayNames([getLocale()],{type:'region'});
     render();appearanceDialog();$('#interface-language').focus();
@@ -482,9 +524,11 @@ document.addEventListener('submit', e=>{
     try { game=createGame({catalog,deck:profile.deck,...values});counted=false;handoff=false;screen='battle';modal.close();render(); } catch(error) {$('#match-error').textContent=tr(error.message);} return;
   }
   if(e.target.id==='card-form') {
-    e.preventDefault(); const data=Object.fromEntries(new FormData(e.target));
+    e.preventDefault();
+    if(profile.custom.length>=1000){$('#form-error').textContent=tr('最多保存 1000 張自訂卡牌');return;}
+    const data=Object.fromEntries(new FormData(e.target));
     data.effects=[...$('#effect-rows').children].map(row=>({trigger:$('[name="trigger"]',row).value,action:$('[name="action"]',row).value,target:$('[name="target"]',row).value,amount:Number($('[name="amount"]',row).value)}));
-    try { const card=validateCustom(data); profile.custom.push(card);catalog=collect();persist();formBase=null;screen='collection';origin='自訂';filter='all';sourceLanguage='all';sourceCountry='all';ability='all';query='';render();toast(`已鑄造「${card.name}」`); } catch(error) {$('#form-error').textContent=tr(error.message);}
+    try { const card=validateCustom(data);if(!persist({...profile,custom:[...profile.custom,card]}))return;formBase=null;screen='collection';origin='自訂';filter='all';sourceLanguage='all';sourceCountry='all';ability='all';query='';render();toast(`已鑄造「${card.name}」`); } catch(error) {$('#form-error').textContent=tr(error.message);}
   }
 });
 document.addEventListener('error', e=>{if(e.target instanceof HTMLImageElement) {const parent=e.target.parentElement;e.target.remove();parent.classList.add('image-failed');parent.setAttribute('data-fallback','MEME');}},true);

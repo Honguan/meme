@@ -10,7 +10,7 @@
     "dev:online": "wrangler dev --port 8787",
     "db:local": "wrangler d1 migrations apply meme-matches --local",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --test tests/game.test.js tests/matches.test.js",
+    "test": "node --test tests/game.test.js tests/matches.test.js tests/storage.test.js",
     "test:browser": "playwright test",
     "catalog:refresh": "node scripts/refresh-catalog.mjs",
     "catalog:collect": "node scripts/collect-world.mjs",

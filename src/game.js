@@ -80,6 +80,11 @@ export function playError(g, side, index, targetId, slot) {
   if (card.type === 'trap' && p.traps.length >= 2) return '最多設置 2 張陷阱';
   if (card.type === 'equip' && !units(g, side).length) return '先召喚一名角色';
   if (targetId && !g.units.some(u => u.uid === targetId && u.hp > 0)) return '目標已離場';
+  if (targetId && !isUnit(card)) {
+    const target = g.units.find(u => u.uid === targetId);
+    const aimed = card.effects.filter(e => e.trigger === 'play' && !['draw','energy'].includes(e.action) && ['ally','enemy','self'].includes(e.target));
+    if (card.type === 'equip' && target.side !== side || aimed.length && !aimed.some(e => target.side === (e.target === 'enemy' ? 1-side : side))) return '這張卡不能指定這個目標';
+  }
   if (slot !== undefined && isUnit(card)) {
     const materials = card.type==='fusion' ? fusionPair(g,side) : [];
     if (!Number.isInteger(slot) || slot<0 || slot>2) return '位置無效';
@@ -97,7 +102,7 @@ export function moveUnit(g, side, uid, slot) {
 function targets(g, side, target, source, targetId) {
   const friends = units(g, side), enemies = units(g, 1 - side);
   const pick = list => [list.find(u => u.uid === targetId) || list[0]].filter(Boolean);
-  if (target === 'self') return source?.hp > 0 ? [source] : pick(friends);
+  if (target === 'self') return source ? (source.hp > 0 && !source.dead ? [source] : []) : pick(friends);
   if (target === 'allies') return friends;
   if (target === 'enemies') return enemies;
   return pick(target === 'enemy' ? enemies : friends);
@@ -225,6 +230,7 @@ export function finishRound(g) {
     p.energy = Math.min(8, 2 + g.round) + Number(active.includes('stonks')) + Number(full.includes('stonks'));
     draw(g, side, 1 + Number(active.includes('brain')) + Number(full.includes('brain')));
     for (const u of units(g, side)) {
+      if (u.hp <= 0 || u.dead) continue;
       u.hitUsed = false;
       if (active.includes('wholesome')) u.hp = Math.min(u.maxHp, u.hp + 2 + (full.includes('wholesome') ? 3 : 0));
       if (active.includes('glitch')) u.shield = Math.min(999, u.shield + 2 + (full.includes('glitch') ? 3 : 0));

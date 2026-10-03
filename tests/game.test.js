@@ -16,6 +16,44 @@ import { moveUnit } from '../src/game.js';
 function setup() { const g=createGame({seed:123}); g.units=[]; g.players.forEach(p=>{p.hand=[];p.energy=9;p.deck=[];p.discard=[];}); return g; }
 const card=id=>CORE.find(c=>c.id===id);
 
+test('explicit single-target plays reject the wrong side without spending and retain mixed-effect fallback',()=>{
+  const g=setup();g.players[0].hand=['bonk','suit'];
+  const friend=summon(g,card('doge'),0),enemy=summon(g,card('harold'),1);
+  const before=JSON.stringify(g);
+  assert.equal(playCard(g,0,0,friend.uid).ok,false);
+  assert.equal(playCard(g,0,1,enemy.uid).ok,false);
+  assert.equal(JSON.stringify(g),before);
+  const mixed={...card('bonk'),id:'mixed',effects:[{trigger:'play',action:'damage',amount:2,target:'enemy'},{trigger:'play',action:'shield',amount:3,target:'ally'}]};
+  g.cards.mixed=mixed;g.players[0].hand=['mixed'];
+  assert.equal(playCard(g,0,0,friend.uid).ok,true);
+  assert.equal(friend.shield,3);assert.equal(enemy.hp,card('harold').hp-2);
+});
+
+test('a fallen source never redirects self effects to a surviving ally',()=>{
+  const g=setup();
+  const fallen=summon(g,{...card('doge'),effects:[{trigger:'death',action:'buff',amount:9,target:'self'}]},0);
+  const friend=summon(g,card('doge'),0);
+  fallen.hp=0;cleanup(g);
+  assert.equal(friend.attack,card('doge').attack);
+  assert.equal(fallen.dead,true);
+  assert.equal(g.players[1].ko,1);
+});
+
+test('round casualties cannot be revived by fields or trigger their own round effects',()=>{
+  for(const field of ['grid','xp']) {
+    const g=setup();g.field=field;
+    summon(g,{...card('doge'),effects:[{trigger:'round',action:'damage',amount:99,target:'allies'}]},0);
+    const victim=summon(g,{...card('doge'),effects:[{trigger:'round',action:'energy',amount:9,target:'self'}]},0);
+    summon(g,card('harold'),1);
+    finishRound(g);
+    assert.equal(victim.hp,0);
+    assert.equal(victim.dead,true);
+    assert.equal(g.players[0].energy,4);
+    assert.equal(g.players[1].ko,2);
+    assert.equal(g.players[0].hp,16);
+  }
+});
+
 test('drop zones validate type, owner, occupancy and energy before playing; chosen lanes affect physics',()=>{
   const g=setup();g.players[0].hand=['doge','bonk','suit','reverse','fine','fusion'];
   const friend=summon(g,card('doge'),0,0),enemy=summon(g,card('harold'),1,0);

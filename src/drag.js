@@ -15,7 +15,7 @@ export function dropIntent(game, index, zone) {
   if(card.type==='field')return {error:zone.kind==='field'?'':'場地卡要放在場地區'};
   if(zone.kind==='unit'&&zone.uid) {
     const valid=card.type==='equip'?own:card.effects.some(e=>e.trigger==='play'&&(['ally','allies','self'].includes(e.target)?own:!own));
-    return {targetId:zone.uid,error:valid?'':'這張卡不能指定這個目標'};
+    return {targetId:zone.uid,error:valid?playError(game,side,index,zone.uid):'這張卡不能指定這個目標'};
   }
   if(card.type==='spell'&&own&&zone.kind==='cast')return {error:''};
   return {error:card.type==='equip'?'裝備要交給自己的角色':'這裡不能發動這張卡'};

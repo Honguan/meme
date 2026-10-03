@@ -1,5 +1,22 @@
 // Source-language keys keep domain values and imported card data independent of UI language.
 const rows = `
+已保存卡組|Saved decks|保存済みデッキ|Mazos guardados
+選擇卡組|Select a deck|デッキを選択|Seleccionar mazo
+卡組名稱|Deck name|デッキ名|Nombre del mazo
+保存卡組|Save deck|デッキを保存|Guardar mazo
+刪除已保存卡組|Delete saved deck|保存済みデッキを削除|Eliminar mazo guardado
+刪除已保存卡組？|Delete this saved deck?|保存済みデッキを削除しますか？|¿Eliminar este mazo guardado?
+覆寫已保存卡組？|Overwrite this saved deck?|保存済みデッキを上書きしますか？|¿Sobrescribir este mazo guardado?
+確認覆寫|Confirm overwrite|上書きを確認|Confirmar sobrescritura
+卡組已保存|Deck saved|デッキを保存しました|Mazo guardado
+最多保存 20 組卡組|You can save up to 20 decks.|保存できるデッキは20組までです。|Puedes guardar hasta 20 mazos.
+最多保存 1000 張自訂卡牌|You can save up to 1000 custom cards.|保存できるカスタムカードは1000枚までです。|Puedes guardar hasta 1000 cartas personalizadas.
+卡組名稱需為 1 至 48 字|Deck name must contain 1 to 48 characters.|デッキ名は1～48文字にしてください。|El nombre debe tener entre 1 y 48 caracteres.
+已保存卡組格式無效或超過 20 組|Saved decks are invalid or exceed 20 decks.|保存済みデッキが無効か20組を超えています。|Los mazos guardados no son válidos o superan 20.
+已保存卡組 ID 無效|Invalid saved deck ID|保存済みデッキのIDが無効です|ID de mazo guardado no válido
+已保存卡組 ID 重複|Duplicate saved deck ID|保存済みデッキのIDが重複しています|ID de mazo guardado duplicado
+也會從目前及所有已保存卡組移除這張卡。|This card will also be removed from the current deck and all saved decks.|現在のデッキとすべての保存済みデッキからもこのカードを削除します。|Esta carta también se eliminará del mazo actual y de todos los guardados.
+組已保存卡組。匯入後取代目前卡組、已保存卡組與自訂卡庫。|saved decks. Import replaces the current deck, saved decks and custom library.|組の保存済みデッキ。現在のデッキ、保存済みデッキとカスタム図鑑を置き換えます。|mazos guardados. La importación reemplaza el mazo actual, los guardados y la biblioteca personalizada.
 線上匹配|Online matchmaking|オンラインマッチ|Emparejamiento en línea
 匹配對戰|Find opponent|対戦相手を探す|Buscar rival
 開始匹配|Find a match|マッチング開始|Buscar partida

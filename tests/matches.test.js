@@ -28,6 +28,21 @@ async function call(db, key, action='state', data={}, now=100000) {
   return { status: response.status, ...await response.json() };
 }
 
+test('concurrent commands commit one version and rejected targets leave authoritative state unchanged',async()=>{
+  const db=database(),a=token(),b=token();
+  await call(db,a,'join',payload());await call(db,b,'join',payload());
+  const results=await Promise.all([call(db,a,'ready',{version:0}),call(db,a,'ready',{version:0})]);
+  assert.equal(results.filter(r=>r.status==='matched').length,1);
+  assert.equal(results.filter(r=>r.status===409).length,1);
+  const state=await call(db,b);assert.equal(state.version,1);assert.equal(state.turn,1);
+  db.sql.close();
+  const p=loadout(payload()),room=makeRoom(p,p,0);
+  room.game.players[0].hand=['bonk'];room.game.players[0].energy=9;
+  const before=JSON.stringify(room);
+  assert.throws(()=>command(room,0,{action:'play',index:0,targetId:room.game.units.find(u=>u.side===0).uid},1),/這張卡不能指定這個目標/);
+  assert.equal(JSON.stringify(room),before);
+});
+
 test('match queue pairs two clients, hides private state, enforces turns and versions', async()=>{
   const db=database(),a=token(),b=token();
   assert.equal((await call(db,a,'join',payload())).status,'waiting');
