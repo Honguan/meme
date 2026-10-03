@@ -2,6 +2,57 @@ import { test, expect } from '@playwright/test';
 import { freshProfile, parseProfile } from '../src/storage.js';
 import { CATALOG } from '../src/catalog.js';
 
+test('unreadable saves remain recoverable until an explicit replacement succeeds',async({page})=>{
+  const raw='{"version":1,"custom":[{"name":"不可遺失的卡牌"}]';
+  await page.addInitScript(raw=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',raw);},raw);
+  await page.goto('/');await page.keyboard.press('Escape');await page.locator('[data-nav="collection"]').click();
+  await page.locator('[data-remove]').first().click();
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(raw);
+  await expect(page.getByRole('heading',{name:'存檔無法讀取',exact:true})).toBeVisible();
+  const download=page.waitForEvent('download');await page.getByRole('button',{name:'下載原始存檔',exact:true}).click();
+  const file=await download;expect(file.suggestedFilename()).toBe('meme-clash-recovery.json');
+  const stream=await file.createReadStream(),chunks=[];for await(const chunk of stream)chunks.push(chunk);
+  expect(Buffer.concat(chunks).toString()).toBe(raw);
+  await page.screenshot({path:'.artifacts/save-recovery-desktop.png'});
+  await page.setViewportSize({width:390,height:844});await page.screenshot({path:'.artifacts/save-recovery-mobile.png'});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+  const actions=await page.locator('.save-recovery .dialog-actions>button').evaluateAll(buttons=>buttons.map(button=>{const r=button.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,fits:button.scrollWidth<=button.clientWidth};}));
+  expect(actions.every(button=>button.width>280&&button.height<80&&button.fits)).toBeTruthy();
+  expect(actions[1].y).toBeGreaterThan(actions[0].y+actions[0].height);expect(actions[2].y).toBeGreaterThan(actions[1].y+actions[1].height);
+  await page.getByRole('button',{name:'關閉',exact:true}).click();
+  await page.getByRole('button',{name:'原始存檔恢復',exact:true}).click();
+  await page.evaluate(()=>{window.storageFails=true;const setItem=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){if(key==='meme-clash-v1'&&window.storageFails)throw new DOMException('Quota exceeded','QuotaExceededError');return setItem.call(this,key,value);};});
+  await page.getByRole('button',{name:'覆寫為預設卡組',exact:true}).click();await expect(page.locator('#toast')).toContainText('瀏覽器儲存空間不足');
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(raw);
+  await expect(page.getByRole('heading',{name:'存檔無法讀取',exact:true})).toBeVisible();
+  await page.evaluate(()=>window.storageFails=false);await page.getByRole('button',{name:'覆寫為預設卡組',exact:true}).click();
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')))).toEqual(freshProfile());
+  await expect(page.getByRole('button',{name:'原始存檔恢復',exact:true})).toHaveCount(0);
+  await page.reload();await expect(page.locator('#modal')).not.toBeVisible();
+});
+
+test('recovery imports restore backup statistics only after a successful confirmed write',async({page})=>{
+  const backup=freshProfile();backup.stats={wins:7,losses:4,games:11};
+  backup.decks=[{id:'recovered-deck',name:'Recovered deck',deck:[...backup.deck]}];
+  await page.addInitScript(()=>{if(localStorage.getItem('meme-clash-v1')===null)localStorage.setItem('meme-clash-v1','');localStorage.setItem('meme-clash-language','en');});
+  await page.goto('/');await expect(page.getByRole('heading',{name:'Save could not be read',exact:true})).toBeVisible();
+  const upload=async()=>{
+    const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'Import',exact:true}).click();
+    await (await chooser).setFiles({name:'recovered.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(backup))});
+  };
+  await upload();await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe('');
+  await page.getByRole('button',{name:'Recover original save',exact:true}).click();await upload();
+  await page.evaluate(()=>{window.storageFails=true;const setItem=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){if(key==='meme-clash-v1'&&window.storageFails)throw new DOMException('Quota exceeded','QuotaExceededError');return setItem.call(this,key,value);};});
+  await page.locator('#confirm-import').click();await expect(page.locator('#toast')).toContainText('Browser storage unavailable');
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe('');
+  await page.evaluate(()=>window.storageFails=false);await page.locator('#confirm-import').click();
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')))).toEqual(backup);
+  await expect(page.getByRole('button',{name:'Recover original save',exact:true})).toHaveCount(0);
+  await page.reload();await expect(page.locator('#modal')).not.toBeVisible();
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).stats)).toEqual(backup.stats);
+});
+
 test('deck-only updates reuse the derived catalog instead of cloning every web template',async({page})=>{
   const profile=freshProfile();
   profile.web=Array.from({length:1000},(_,i)=>({id:`catalog-cache-${i}`,name:`Dancing ${i}`,url:'https://example.com/template.png'}));

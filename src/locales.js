@@ -1,5 +1,10 @@
 // Source-language keys keep domain values and imported card data independent of UI language.
 const rows = `
+存檔無法讀取|Save could not be read|セーブを読み込めません|No se puede leer la partida guardada
+原始存檔恢復|Recover original save|元のセーブを復旧|Recuperar guardado original
+下載原始存檔|Download original save|元のセーブをダウンロード|Descargar guardado original
+覆寫為預設卡組|Overwrite with default deck|初期デッキで上書き|Sobrescribir con el mazo inicial
+原始存檔已保留。覆寫後無法還原，請先下載原始存檔。|The original save is preserved. Download it before overwriting; overwriting cannot be undone.|元のセーブは保持されています。上書きは元に戻せないため、先にダウンロードしてください。|El guardado original se conserva. Descárgalo antes de sobrescribirlo; la sobrescritura no se puede deshacer.
 已保存卡組|Saved decks|保存済みデッキ|Mazos guardados
 選擇卡組|Select a deck|デッキを選択|Seleccionar mazo
 卡組名稱|Deck name|デッキ名|Nombre del mazo

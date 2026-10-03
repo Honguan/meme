@@ -1,6 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { freshProfile, parseProfile, saveProfile, STORAGE_KEY } from '../src/storage.js';
+import { freshProfile, parseProfile, loadProfile, saveProfile, STORAGE_KEY } from '../src/storage.js';
+
+test('unreadable and empty saves expose their exact original bytes without overwriting them',()=>{
+  const previous=globalThis.localStorage;let stored;
+  globalThis.localStorage={getItem(key){assert.equal(key,STORAGE_KEY);return stored;},setItem(){assert.fail('Loading must not write');}};
+  try {
+    for(const raw of ['', '{"version":1', JSON.stringify({...freshProfile(),version:2})]) {
+      stored=raw;const loaded=loadProfile();
+      assert.equal(loaded.raw,raw);assert.ok(loaded.error);assert.deepEqual(loaded.profile,freshProfile());assert.equal(stored,raw);
+    }
+    stored=null;assert.equal(loadProfile().error,'');assert.equal(loadProfile().raw,undefined);
+    stored=JSON.stringify(freshProfile());assert.equal(loadProfile().error,'');assert.equal(loadProfile().raw,undefined);
+    globalThis.localStorage.getItem=()=>{throw new Error('Access denied');};
+    assert.equal(loadProfile().raw,null);assert.ok(loadProfile().error);
+  } finally {if(previous===undefined)delete globalThis.localStorage;else globalThis.localStorage=previous;}
+});
 
 test('version 1 profiles preserve saved decks and accept old profiles and drafts', () => {
   const original = freshProfile();

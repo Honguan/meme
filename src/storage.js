@@ -28,10 +28,11 @@ export function parseProfile(data) {
   return { version: 1, custom, web, deck, decks, stats };
 }
 export function loadProfile() {
+  let raw = null;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { profile: parseProfile(JSON.parse(raw)), error: '' };
-  } catch { return { profile: freshProfile(), error: '存檔無法讀取，已載入預設卡組。原始存檔尚未覆寫。' }; }
+    raw = localStorage.getItem(STORAGE_KEY);
+    if (raw !== null) return { profile: parseProfile(JSON.parse(raw)), error: '' };
+  } catch { return { profile: freshProfile(), error: '存檔無法讀取，已載入預設卡組。原始存檔尚未覆寫。', raw }; }
   return { profile: freshProfile(), error: '' };
 }
 export function freshProfile() { return { version: 1, custom: [], web: [], deck: [...DEFAULT_DECK], decks: [], stats: { wins: 0, losses: 0, games: 0 } }; }

@@ -20,6 +20,7 @@ const icon = (name, cls = '') => `<i data-lucide="${name}" class="${cls}" aria-h
 const drawIcons = () => createIcons({ icons, attrs: { 'stroke-width': 1.8 } });
 const loaded = loadProfile();
 let profile = loaded.profile;
+let recoveryRaw = loaded.raw ?? null;
 let catalog = collect();
 let game = createGame({ catalog, deck: validDeck() });
 let screen = 'battle', arena, query = '', filter = 'all', origin = 'all', visible = 24, mute = true, audio, counted = false;
@@ -88,7 +89,14 @@ async function onlineCommand(action,data={}) {
 function matchmakingDialog() {
   openDialog(`<div class="dialog-heading"><h2>線上匹配</h2><p>自由卡組 · 20 LP · 每次部署 90 秒</p><p>自訂卡可參戰；場地採先進入佇列的玩家設定。</p></div><form id="online-form"><label>場地<select name="field">${FIELDS.map(f=>`<option value="${f.id}" ${game.field===f.id?'selected':''}>${f.name}</option>`).join('')}</select></label><p class="form-error" id="online-error" role="alert"></p><button class="primary-button" type="submit">${icon('swords')} 開始匹配</button></form>`,'small-modal');
 }
-function persist(next = profile) { try { saveProfile(next); const changed=next.custom!==profile.custom||next.web!==profile.web; profile=next; if(changed)catalog=collect(); return true; } catch { toast('瀏覽器儲存空間不足，請匯出卡組備份'); return false; } }
+function persist(next = profile, replace = false) {
+  if (recoveryRaw !== null && !replace) { recoveryDialog(); return false; }
+  try { saveProfile(next); recoveryRaw=null; const changed=next.custom!==profile.custom||next.web!==profile.web; profile=next; if(changed)catalog=collect(); return true; } catch { toast('瀏覽器儲存空間不足，請匯出卡組備份'); return false; }
+}
+function recoveryDialog() {
+  openDialog(`<div class="dialog-heading"><h2>存檔無法讀取</h2><p>原始存檔已保留。覆寫後無法還原，請先下載原始存檔。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="export-recovery">${icon('download')} 下載原始存檔</button><button class="quiet-button" data-action="import">${icon('upload')} 匯入</button><button class="primary-button" id="confirm-reset-save">${icon('refresh-cw')} 覆寫為預設卡組</button></div>`, 'small-modal save-recovery');
+  $('#confirm-reset-save').onclick=()=>{if(!persist(profile,true))return;modal.close();render();};
+}
 function saveDeck() {
   const name = $('#deck-name').value.trim();
   if (!name || name.length > 48) return toast('卡組名稱需為 1 至 48 字');
@@ -136,7 +144,7 @@ function cardHTML(card, index = null) {
 function header() {
   return `<header class="topbar"><a href="#battle" class="brand" aria-label="MEME CLASH 首頁"><span class="brand-mark">${icon('swords')}</span><span>MEME<span class="brand-light">CLASH</span><small>迷因亂鬥</small></span></a>
     <nav aria-label="主要導覽">${[['battle','swords','對決'],['collection','layers','卡牌圖鑑'],['workshop','hammer','卡組工坊']].map(([id, glyph, text]) => `<button class="nav-item ${screen === id ? 'active' : ''}" data-nav="${id}" ${game.phase === 'battle' ? 'disabled' : ''} ${screen === id ? 'aria-current="page"' : ''}>${icon(glyph)}<span>${text}</span></button>`).join('')}</nav>
-    <div class="header-end"><button class="icon-button" data-action="appearance" title="語言與色系" aria-label="語言與色系" ${game.phase==='battle'?'disabled':''}>${icon('palette')}</button><a class="icon-button" href="https://github.com/Honguan/meme" target="_blank" rel="noopener noreferrer" title="GitHub 開源程式碼" aria-label="GitHub 開源程式碼">${icon('github')}</a><button class="icon-button" data-action="sound" aria-label="${mute ? '開啟音效' : '關閉音效'}" title="${mute ? '開啟音效' : '關閉音效'}" aria-pressed="${!mute}">${icon(mute ? 'volume-x' : 'volume-2')}</button></div>
+    <div class="header-end">${recoveryRaw!==null?`<button class="icon-button" data-action="recovery" title="原始存檔恢復" aria-label="原始存檔恢復">${icon('download')}</button>`:''}<button class="icon-button" data-action="appearance" title="語言與色系" aria-label="語言與色系" ${game.phase==='battle'?'disabled':''}>${icon('palette')}</button><a class="icon-button" href="https://github.com/Honguan/meme" target="_blank" rel="noopener noreferrer" title="GitHub 開源程式碼" aria-label="GitHub 開源程式碼">${icon('github')}</a><button class="icon-button" data-action="sound" aria-label="${mute ? '開啟音效' : '關閉音效'}" title="${mute ? '開啟音效' : '關閉音效'}" aria-pressed="${!mute}">${icon(mute ? 'volume-x' : 'volume-2')}</button></div>
   </header>`;
 }
 function playerHUD(side) {
@@ -319,9 +327,9 @@ async function refreshCatalog(button) {
     render(); toast(`已更新 ${accepted.length} 個模板，新增 ${catalog.length-before} 張卡牌`);
   } catch(e) { toast(`${e.message}，保留既有卡庫`); } finally { button.disabled = false; }
 }
-function exportProfile() {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(profile,null,2)], {type:'application/json'}));
-  const a = document.createElement('a'); a.href = url; a.download = 'meme-clash-deck.json'; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+function exportProfile(raw = JSON.stringify(profile,null,2), filename = 'meme-clash-deck.json') {
+  const url = URL.createObjectURL(new Blob([raw], {type:'application/json'}));
+  const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function importProfile() {
   const input = document.createElement('input'); input.type='file'; input.accept='.json,application/json';
@@ -331,7 +339,7 @@ function importProfile() {
       if (file.size > 10_000_000) throw new Error('匯入檔案不得超過 10 MB');
       const incoming = parseProfile(JSON.parse(await file.text()));
       openDialog(`<div class="dialog-heading"><h2>匯入卡組</h2><p>${incoming.deck.length} 張卡組卡牌、${incoming.custom.length} 張自訂卡牌、${incoming.decks.length} 組已保存卡組。匯入後取代目前卡組、已保存卡組與自訂卡庫。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-import">${icon('upload')} 確認匯入</button></div>`, 'small-modal');
-      $('#confirm-import').onclick = () => { if (!persist({ ...incoming, stats: profile.stats })) return; savedDeckId='';deckName='';modal.close();render();toast('卡組已匯入'); };
+      $('#confirm-import').onclick = () => { if (!persist({ ...incoming, stats: recoveryRaw!==null?incoming.stats:profile.stats },true)) return; savedDeckId='';deckName='';modal.close();render();toast('卡組已匯入'); };
     } catch(e) { toast(`匯入失敗：${e.message}`); }
   }; input.click();
 }
@@ -484,6 +492,8 @@ document.addEventListener('click', e => {
     case 'more': visible+=24; render();break;
     case 'refresh': void refreshCatalog(button);break;
     case 'export': exportProfile();break;
+    case 'recovery': recoveryDialog();break;
+    case 'export-recovery': if(recoveryRaw!==null)exportProfile(recoveryRaw,'meme-clash-recovery.json');break;
     case 'import': importProfile();break;
     case 'add-effect': if($('#effect-rows').children.length>=4) toast('最多 4 組效果');else {$('#effect-rows').insertAdjacentHTML('beforeend',effectRow());syncTriggers();localize($('#effect-rows'));drawIcons();}break;
     case 'remove-effect': button.closest('.effect-row').remove();break;
@@ -537,4 +547,4 @@ modal.addEventListener('cancel',e=>{if(handoff)e.preventDefault();});
 window.addEventListener('hashchange',()=>{if(location.hash==='#battle'&&game.phase!=='battle'){screen='battle';render();}});
 render();
 if(network.token){online={status:'joining'};render();void network.send('state');}
-if(loaded.error) toast(loaded.error);
+if(recoveryRaw!==null) recoveryDialog();else if(loaded.error) toast(loaded.error);
