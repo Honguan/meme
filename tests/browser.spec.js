@@ -817,6 +817,27 @@ test('translated workshop and previews preserve user-authored card text',async({
   await expect(page.locator('.catalog-grid .meme-card')).toHaveCount(1);
 });
 
+test('a delayed catalog refresh preserves an active collision and completes the round',async({page})=>{
+  let release;const pending=new Promise(resolve=>release=resolve),errors=[];
+  page.on('pageerror',error=>errors.push(error.message));
+  await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),freshProfile());
+  await page.route('https://api.imgflip.com/get_memes',async route=>{await pending;await route.fulfill({json:{success:true,data:{memes:[{id:'late-round',name:'Late round meme',url:'https://i.imgflip.com/late-round.jpg'}]}}});});
+  try {
+    await page.goto('/');await page.locator('[data-nav="collection"]').click();
+    const requested=page.waitForRequest('https://api.imgflip.com/get_memes');
+    await page.getByRole('button',{name:'更新網路卡庫',exact:true}).click();await requested;
+    await page.locator('[data-nav="battle"]').click();await page.getByRole('button',{name:'開始碰撞',exact:true}).click();
+    await expect(page.locator('.duel-board')).toHaveClass(/is-battling/);
+    const canvas=await page.locator('#arena').elementHandle();release();
+    await expect(page.locator('#toast')).toContainText('已更新 1 個模板');
+    expect(await canvas.evaluate(node=>node.isConnected)).toBe(true);
+    await expect(page.locator('#round-number')).toHaveText('02',{timeout:15000});
+    expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).web)).toEqual([{id:'late-round',name:'Late round meme',url:'https://i.imgflip.com/late-round.jpg'}]);
+    await page.locator('[data-nav="collection"]').click();await page.locator('#search').fill('Late round meme');
+    await expect(page.locator('[data-card="web-late-round"]')).toBeVisible();expect(errors).toEqual([]);
+  } finally {release();}
+});
+
 test('real desktop match animates and finishes a round without console errors',async({page})=>{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto('/');
   await expect(page.getByRole('heading',{name:'對戰',exact:true})).toBeVisible();

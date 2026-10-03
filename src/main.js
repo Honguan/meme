@@ -245,6 +245,7 @@ function workshopHTML() {
     </section>${deckSidebar()}</div></main>`;
 }
 function render() {
+  if(arena?.running&&arena.game===game&&!onlineBusy)return;
   cancelDrag?.();selected=null;
   hideHoverPreview();
   arena?.destroy(); arena = null;

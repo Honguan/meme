@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { DEFAULT_DECK } from '../src/catalog.js';
 import { loadout, makeRoom, command, view } from '../server/matches.js';
+import { parseProfile } from '../src/storage.js';
 
 test('local D1 handles simultaneous queues, duplicate commands and cancellation without orphan players',async({page,baseURL})=>{
   test.skip(!['localhost','127.0.0.1','[::1]'].includes(new URL(baseURL).hostname),'Queue bursts run only against the local test database.');
@@ -307,6 +308,40 @@ for(const [termination,width] of [['idle',1440],['401',390]])test(`interrupted o
   await page.getByRole('button',{name:'離開對局',exact:true}).click();
   await page.getByRole('button',{name:'確認離開',exact:true}).click();
   await expect(page.getByRole('button',{name:'匹配對戰',exact:true})).toBeVisible();
+});
+
+test('a delayed catalog refresh preserves online replay while a confirmed departure still stops it and retries',async({page})=>{
+  const deck=loadout({deck:DEFAULT_DECK,custom:[],field:'grid'}),room=makeRoom(deck,deck,1000);
+  const initial=view(room,0,0,'refresh-replay',1000,1000);
+  command(room,0,{action:'ready'},1000);command(room,1,{action:'ready'},1000);
+  const replay=view(room,0,2,'refresh-replay',1000,1000);replay.replay.duration=30000;
+  let response=initial,releaseCatalog,releaseLeave,joins=0,departures=0;const errors=[];
+  const catalogPending=new Promise(resolve=>releaseCatalog=resolve),leavePending=new Promise(resolve=>releaseLeave=resolve);
+  page.on('pageerror',error=>errors.push(error.message));
+  await page.route('https://api.imgflip.com/get_memes',async route=>{await catalogPending;await route.fulfill({json:{success:true,data:{memes:[{id:'online-late',name:'Online late meme',url:'https://i.imgflip.com/online-late.jpg'}]}}});});
+  await page.route('**/api/match/**',async route=>{
+    const action=new URL(route.request().url()).pathname.split('/').at(-1);
+    if(action==='leave'&&++departures===1){await leavePending;return route.fulfill({status:503,json:{error:'匹配服務暫時無法連線'}});}
+    return route.fulfill({json:action==='leave'?{status:'idle'}:action==='join'&&++joins>1?{status:'waiting'}:response});
+  });
+  try {
+    await prepare(page);const saved=parseProfile(JSON.parse(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))));
+    await page.locator('[data-nav="collection"]').click();const requested=page.waitForRequest('https://api.imgflip.com/get_memes');
+    await page.getByRole('button',{name:'更新網路卡庫',exact:true}).click();await requested;
+    await page.locator('[data-nav="battle"]').click();await join(page);
+    await expect(page.locator('#online-status')).toContainText('輪到你部署');
+    response=replay;await expect(page.locator('.duel-board')).toHaveClass(/is-battling/);
+    const canvas=await page.locator('#arena').elementHandle();releaseCatalog();
+    await expect(page.locator('#toast')).toContainText('已更新 1 個模板');expect(await canvas.evaluate(node=>node.isConnected)).toBe(true);
+    await page.getByRole('button',{name:'離開對局',exact:true}).click();await page.getByRole('button',{name:'確認離開',exact:true}).click();
+    await expect(page.getByRole('button',{name:'離開對局',exact:true})).toBeDisabled();expect(await canvas.evaluate(node=>node.isConnected)).toBe(false);
+    releaseLeave();await expect(page.locator('#online-status')).toHaveText('連線中斷，正在重試');
+    await expect(page.getByRole('button',{name:'匹配對戰',exact:true})).toBeVisible({timeout:10000});expect(departures).toBe(2);
+    expect(await page.evaluate(()=>sessionStorage.getItem('meme-clash-online'))).toBeNull();
+    expect(JSON.parse(await page.evaluate(()=>localStorage.getItem('meme-clash-v1')))).toEqual({...saved,web:[{id:'online-late',name:'Online late meme',url:'https://i.imgflip.com/online-late.jpg'}]});
+    response={status:'waiting'};await join(page);await expect(page.locator('#online-status')).toHaveText('尋找對手中');expect(errors).toEqual([]);
+    await page.getByRole('button',{name:'取消匹配',exact:true}).click();await expect(page.getByRole('button',{name:'匹配對戰',exact:true})).toBeVisible();
+  } finally {releaseCatalog();releaseLeave();}
 });
 
 test('matchmaking can be cancelled and reports an unavailable service without a fake opponent',async({page})=>{
