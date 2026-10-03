@@ -116,6 +116,68 @@ test('both players can dismiss a finished match concurrently without changing it
   } finally { db.sql.close(); }
 });
 
+test('simultaneous live-match departures dismiss both tickets and preserve the first committed result',async()=>{
+  const db=database(),a=token(),b=token();
+  try {
+    await call(db,a,'join',payload());await call(db,b,'join',payload());
+    const row=db.sql.prepare('SELECT * FROM matches').get();
+    let readers=0,release,committed;const barrier=new Promise(resolve=>release=resolve),prepare=db.prepare;
+    db.prepare=query=>{
+      const statement=prepare(query);
+      return {bind(...args){
+        const bound=statement.bind(...args);
+        if(query==='SELECT * FROM matches WHERE id = ?') {
+          const first=bound.first;
+          bound.first=async()=>{const result=await first();if(++readers===2)release();await barrier;return result;};
+        }
+        if(query.startsWith('UPDATE matches SET state = ?')) {
+          const run=bound.run;
+          bound.run=()=>{const result=run();if(result.meta.changes)committed=args[0];return result;};
+        }
+        return bound;
+      }};
+    };
+    const results=await Promise.all([call(db,a,'leave'),call(db,b,'leave')]);
+    assert.ok(results.every(result=>result.status==='idle'),JSON.stringify(results));
+    assert.equal(db.sql.prepare('SELECT COUNT(*) AS count FROM match_tickets').get().count,0);
+    const after=db.sql.prepare('SELECT state,version FROM matches WHERE id = ?').get(row.id);
+    assert.equal(after.version,row.version+1);assert.equal(after.state,committed);
+    const game=JSON.parse(after.state).game;
+    assert.equal(game.phase,'over');assert.ok([0,1].includes(game.winner));
+    assert.equal((await call(db,a)).status,'idle');assert.equal((await call(db,b)).status,'idle');
+  } finally { db.sql.close(); }
+});
+
+test('a departure conflicting with a live turn update must not silently remove its ticket',async()=>{
+  const db=database(),a=token(),b=token();
+  try {
+    await call(db,a,'join',payload());await call(db,b,'join',payload());
+    const row=db.sql.prepare('SELECT * FROM matches').get(),prepare=db.prepare;
+    let updated,updating=false;
+    db.prepare=query=>{
+      const statement=prepare(query);
+      if(!query.startsWith('UPDATE matches SET state = ?'))return statement;
+      return {bind(...args){
+        const bound=statement.bind(...args),run=bound.run;
+        bound.run=async()=>{
+          if(!updating) {
+            updating=true;
+            assert.equal((await call(db,a,'ready',{version:row.version})).status,'matched');
+            updated=db.sql.prepare('SELECT state FROM matches WHERE id = ?').get(row.id).state;
+          }
+          return run();
+        };
+        return bound;
+      }};
+    };
+    assert.equal((await call(db,b,'leave')).status,409);
+    assert.equal(db.sql.prepare('SELECT COUNT(*) AS count FROM match_tickets').get().count,2);
+    assert.equal(db.sql.prepare('SELECT state FROM matches WHERE id = ?').get(row.id).state,updated);
+    assert.equal((await call(db,b,'leave')).status,'idle');
+    assert.equal((await call(db,a)).game.winner,0);
+  } finally { db.sql.close(); }
+});
+
 test('concurrent commands commit one version and rejected targets leave authoritative state unchanged',async()=>{
   const db=database(),a=token(),b=token();
   await call(db,a,'join',payload());await call(db,b,'join',payload());

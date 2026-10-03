@@ -22,10 +22,11 @@ test('local D1 handles simultaneous queues, duplicate commands and cancellation 
       }
       const active=states.findIndex(state=>state.status==='matched'&&state.side===state.turn);
       const commands=active<0?[]:await Promise.all([0,1].map(()=>call(keys[active],'ready',{version:states[active].version})));
-      await Promise.all(keys.slice(0,8).map(key=>call(key,'leave')));
+      const departed=await Promise.all(keys.slice(0,8).map(key=>call(key,'leave')));
+      const dismissed=await Promise.all(keys.slice(0,8).map(key=>call(key)));
       await call(keys[8],'join',loadout);
       const race=await Promise.all([call(keys[9],'join',loadout),call(keys[8],'leave')]);
-      return {joined,states,commands,race,cancelled:await call(keys[8]),remaining:await call(keys[9])};
+      return {joined,states,commands,departed,dismissed,race,cancelled:await call(keys[8]),remaining:await call(keys[9])};
     } finally {await Promise.all(keys.map(key=>call(key,'leave')));}
   },DEFAULT_DECK);
   expect(result.joined.every(state=>state.http===200&&['waiting','matched'].includes(state.status))).toBeTruthy();
@@ -34,6 +35,8 @@ test('local D1 handles simultaneous queues, duplicate commands and cancellation 
   for(const state of result.states){const sides=pairs.get(state.id)||[];sides.push(state.side);pairs.set(state.id,sides);}
   expect(pairs.size).toBe(4);for(const sides of pairs.values())expect(sides.sort()).toEqual([0,1]);
   expect(result.commands.map(state=>state.http).sort()).toEqual([200,409]);
+  expect(result.departed.every(state=>state.http===200&&state.status==='idle')).toBeTruthy();
+  expect(result.dismissed.every(state=>state.http===200&&state.status==='idle')).toBeTruthy();
   expect(result.race.every(state=>state.http===200)).toBeTruthy();
   expect(result.cancelled.status).toBe('idle');expect(result.remaining.http).toBe(200);
   if(result.remaining.status==='matched') {

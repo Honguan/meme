@@ -187,7 +187,10 @@ export async function matchRequest(request, db, now = Date.now()) {
     }
     if (changed) {
       const saved = await stmt(db, 'UPDATE matches SET state = ?, version = version + 1 WHERE id = ? AND version = ?', JSON.stringify(room), row.id, row.version).run();
-      if (!saved.meta.changes) fail('對局已更新，請重試', 409);
+      if (!saved.meta.changes) {
+        const latest = action === 'leave' ? await stmt(db, 'SELECT * FROM matches WHERE id = ?', row.id).first() : null;
+        if (!latest || JSON.parse(latest.state).game.phase !== 'over') fail('對局已更新，請重試', 409);
+      }
       row.version++;
     }
     if (action === 'leave') {
