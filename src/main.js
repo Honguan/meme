@@ -359,16 +359,20 @@ function exportProfile(raw = JSON.stringify(profile,null,2), filename = 'meme-cl
   const url = URL.createObjectURL(new Blob([raw], {type:'application/json'}));
   const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+let importVersion = 0;
 function importProfile() {
   const input = document.createElement('input'); input.type='file'; input.accept='.json,application/json';
   input.onchange = async () => {
     const file = input.files[0]; if (!file) return;
+    const version = ++importVersion;
     try {
       if (file.size > 10_000_000) throw new Error('匯入檔案不得超過 10 MB');
-      const incoming = parseProfile(JSON.parse(await file.text()));
+      const raw = await file.text();
+      if (version !== importVersion) return;
+      const incoming = parseProfile(JSON.parse(raw));
       openDialog(`<div class="dialog-heading"><h2>匯入卡組</h2><p>${incoming.deck.length} 張卡組卡牌、${incoming.custom.length} 張自訂卡牌、${incoming.decks.length} 組已保存卡組。匯入後取代目前卡組、已保存卡組與自訂卡庫。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-import">${icon('upload')} 確認匯入</button></div>`, 'small-modal');
       $('#confirm-import').onclick = () => { if (!persist({ ...incoming, stats: recoveryRaw!==null?incoming.stats:profile.stats },true)) return; savedDeckId='';deckName='';modal.close();render();toast('卡組已匯入'); };
-    } catch(e) { toast(`匯入失敗：${e.message}`); }
+    } catch(e) { if (version === importVersion) toast(`匯入失敗：${e.message}`); }
   }; input.click();
 }
 function previewHTML(card) {

@@ -288,6 +288,39 @@ test('recovery imports restore backup statistics only after a successful confirm
   expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).stats)).toEqual(backup.stats);
 });
 
+test('latest selected import keeps its confirmation when older reads finish or fail',async({page})=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  const profile=freshProfile(),incoming=freshProfile();
+  incoming.custom=['first','second'].map(id=>({id:`custom-import-${id}`,name:id,type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'',effects:[]}));
+  await page.addInitScript(profile=>{
+    localStorage.setItem('meme-clash-v1',JSON.stringify(profile));localStorage.setItem('meme-clash-language','en');
+    const text=File.prototype.text;
+    File.prototype.text=function(){
+      const read=text.call(this);
+      if(this.name==='slow-error.json')return new Promise((resolve,reject)=>{window.finishImport=()=>reject(new Error('Old read failed'));});
+      if(this.name==='slow.json')return new Promise((resolve,reject)=>{window.finishImport=()=>read.then(resolve,reject);});
+      return read;
+    };
+  },profile);
+  await page.goto('/');await page.locator('[data-nav="collection"]').click();
+  const upload=async(name,raw)=>{
+    const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'Import',exact:true}).click();
+    await (await chooser).setFiles({name,mimeType:'application/json',buffer:Buffer.from(raw)});
+  };
+  for(const [name,old] of [['slow.json',JSON.stringify(profile)],['slow.json','{'],['slow-error.json','']]){
+    await upload(name,old);await upload('latest.json',JSON.stringify(incoming));
+    await expect(page.locator('#confirm-import')).toBeVisible();const confirmation=await page.locator('#modal').textContent();
+    await page.evaluate(()=>window.finishImport());
+    await expect(page.locator('#modal')).toHaveText(confirmation);
+    await expect(page.locator('#toast')).not.toContainText('Import failed');
+    expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')))).toEqual(profile);
+    await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  }
+  await upload('latest.json',JSON.stringify(incoming));await page.locator('#confirm-import').click();
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')))).toEqual(parseProfile(incoming));
+  expect(errors).toEqual([]);
+});
+
 test('deck-only updates reuse the catalog and empty searches skip per-card text construction',async({page})=>{
   const profile=freshProfile();
   profile.web=Array.from({length:1000},(_,i)=>({id:`catalog-cache-${i}`,name:`Dancing ${i}`,url:'https://example.com/template.png'}));
