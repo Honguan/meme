@@ -2,9 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { matchRequest, loadout, makeRoom, command, view } from '../server/matches.js';
-import { DEFAULT_DECK } from '../src/catalog.js';
-import { random } from '../src/game.js';
+import { CATALOG, DEFAULT_DECK } from '../src/catalog.js';
+import { createGame, random } from '../src/game.js';
 
 function database() {
   const sql = new DatabaseSync(':memory:');
@@ -20,6 +23,23 @@ function database() {
 }
 const token = () => `${crypto.randomUUID()}-${crypto.randomUUID()}`;
 const payload = () => ({ deck: DEFAULT_DECK, custom: [], field: 'moon' });
+
+test('local load benchmark waits for delayed joins before cleaning up a failed batch',async()=>{
+  const tickets=new Set();let joins=0,pending=false,earlyLeave=false;
+  const server=createServer(async(request,response)=>{
+    request.resume();const key=request.headers.authorization;
+    if(request.url.endsWith('/join')){
+      if(++joins===1){response.writeHead(400,{'content-type':'application/json'});response.end(JSON.stringify({error:'join failure'}));return;}
+      pending=true;await new Promise(resolve=>setTimeout(resolve,100));tickets.add(key);pending=false;
+    }else if(request.url.endsWith('/leave')){earlyLeave ||= pending;tickets.delete(key);}
+    response.setHeader('content-type','application/json');response.end(JSON.stringify({status:request.url.endsWith('/join')?'waiting':'idle'}));
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  try{
+    await assert.rejects(promisify(execFile)(process.execPath,['scripts/benchmark-matching.mjs','2',`http://127.0.0.1:${server.address().port}`]),error=>error.code===1&&/join failure/.test(error.stderr));
+    assert.equal(joins,2);assert.equal(earlyLeave,false);assert.equal(tickets.size,0);
+  }finally{await new Promise(resolve=>server.close(resolve));}
+});
 
 test('D1 adapter serializes atomic batches and rolls back every statement on failure',async()=>{
   const db=database();
@@ -292,11 +312,18 @@ test('a live player exceeding the deployment deadline forfeits, and strangers ca
 test('custom cards are namespaced, snapshots do not mutate authority, and RNG resumes exactly',()=>{
   const custom=Array.from({length:10},(_,i)=>({id:`c-${i}`,name:`Card ${i}`,type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',effects:[]}));
   const p=loadout({deck:custom.map(c=>c.id),custom,field:'grid'}),room=makeRoom(p,p,0);
+  const baseline=createGame({catalog:[...CATALOG,...Object.values(room.custom)],deck:p.deck.map(id=>`online-0-${id}`),opponentDeck:p.deck.map(id=>`online-1-${id}`),mode:'online',field:p.field,seed:room.game.seed});
+  const {cards,rng:initialRng,...packed}=baseline;
+  assert.deepEqual(room.game,{...packed,cards:undefined,rng:undefined,rngState:initialRng.state});
   assert.notEqual(room.game.players[0].hand[0],room.game.players[1].hand[0]);
   const before=JSON.stringify(room);view(room,0,0,'test',1,1);assert.equal(JSON.stringify(room),before);
   room.game.players[1].traps=['secret-trap'];
   room.custom['secret-trap']={...custom[0],id:'secret-trap',type:'trap'};
   const visible=view(room,0,0,'test',1,1);
+  for(const id of room.game.players[0].hand)assert.deepEqual(visible.game.cards[id],room.custom[id]);
+  for(const id of room.game.players[1].hand)assert.equal(visible.game.cards[id],undefined);
+  assert.equal(visible.game.cards[DEFAULT_DECK[0]],undefined);
+  for(const id of ['rng','rngState','seed'])assert.equal(visible.game[id],undefined);
   assert.deepEqual(visible.game.players[1].traps,['hidden']);assert.equal(visible.game.cards['secret-trap'],undefined);
   const played=command(room,0,{action:'play',index:0,slot:2},1);
   assert.equal(played.game.units.filter(u=>u.side===0).length,2);

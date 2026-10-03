@@ -36,7 +36,7 @@ export function makeRoom(first, second, now) {
     custom[key] = { ...p.custom[id], id: key };
     return key;
   }));
-  const g = createGame({ catalog: [...CATALOG, ...Object.values(custom)], deck: decks[0], opponentDeck: decks[1],
+  const g = createGame({ catalog: [...new Set(decks.flat())].map(id => custom[id] || cards[id]), deck: decks[0], opponentDeck: decks[1],
     mode: 'online', field: first.field, seed: crypto.getRandomValues(new Uint32Array(1))[0] });
   return { game: pack(g), custom, deadline: now + TURN_TTL, replay: null, battleUntil: 0 };
 }
@@ -89,7 +89,7 @@ export function command(room, side, input, now) {
 }
 
 export function view(room, side, version, id, now, peerSeen) {
-  const g = unpack({ ...room, game: structuredClone(room.game) }), visible = new Set(g.units.map(u => u.id));
+  const g = structuredClone(room.game), visible = new Set(g.units.map(u => u.id));
   for (let i = 0; i < 2; i++) {
     const p = g.players[i];
     p.discard.forEach(c => visible.add(c));
@@ -99,7 +99,7 @@ export function view(room, side, version, id, now, peerSeen) {
   }
   const turn = g.active;
   g.active = side;
-  g.cards = Object.fromEntries([...visible].map(id => [id, g.cards[id]]));
+  g.cards = Object.fromEntries([...visible].map(id => [id, room.custom[id] || cards[id]]));
   delete g.rng; delete g.rngState; delete g.seed;
   return { status: 'matched', id, side, version, turn, game: g, replay: room.replay,
     remaining: Math.max(0, Math.ceil((room.deadline - now) / 1000)), battling: now < room.battleUntil,

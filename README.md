@@ -148,6 +148,17 @@ Windows 瀏覽器測試使用已安裝的 Microsoft Edge；Linux 使用 Playwrig
 
 併發佇列測試只對本機 Worker 的 D1 執行，不會向公開佇列批次送入測試玩家；涵蓋多人配對、同版本重複操作、取消競態與雙方同時退出已終局對局。規則測試的 SQLite 替身也驗證交易原子性與失敗回滾。瀏覽器測試驗證終局戰績儲存失敗時，記憶體、匯出備份與原存檔保持相同統計，後續對局正常計算一次。
 
+本機匹配負載量測使用隔離資料庫。先執行 `npm run build`，再分別啟動服務與量測：
+
+```sh
+npx wrangler d1 migrations apply meme-matches --local --persist-to .artifacts/matching-load-db
+npx wrangler dev --port 8797 --persist-to .artifacts/matching-load-db
+# 另一個終端
+node scripts/benchmark-matching.mjs 64
+```
+
+可指定 2–256 個偶數連線及第二參數的本機 HTTP 網址；拒絕遠端網址。量測檢查每位玩家恰好配成一場雙人對局，輸出總耗時與請求延遲，最後退出測試佇列。採密集輪詢，不代表真實玩家或正式服務容量；不對公開網站壓測。對局開局僅建立雙方卡組的定義，公開輪詢僅組裝可見卡牌，不複製完整全球卡庫；對戰指令及隱藏規則不變。
+
 正式前端將全球卡庫拆成獨立 `world-catalog` 資料檔，介面修改不會使該檔的快取失效；首次開局仍會載入完整卡庫。單純修改卡組或統計時不重建卡庫，自訂卡、匯入或網路模板更新時才重新計算。
 
 ## 專案結構
