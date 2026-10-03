@@ -24,13 +24,15 @@ export class MatchClient {
         const response = await fetch(`/api/match/${action}`, { method: action === 'state' ? 'GET' : 'POST',
           headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/json' },
           ...(action === 'state' ? {} : { body: JSON.stringify(data) }), signal: AbortSignal.timeout(10000) });
-        const state = await response.json();
-        if (!response.ok) throw new Error(state.error || '匹配服務暫時無法連線');
+        const rejected = response.status === 401;
+        const state = rejected ? { status: 'idle' } : await response.json();
+        if (!response.ok && !rejected) throw new Error(state.error || '匹配服務暫時無法連線');
         if (state.status === 'idle') {
           this.token = null; this.leaving = false;
           try { sessionStorage.removeItem(KEY); } catch {}
         }
         this.pending = false; this.onState(state);
+        if (rejected) this.onError('連線憑證無效');
         return state;
       } catch (error) { this.onError(error.message); }
       finally {

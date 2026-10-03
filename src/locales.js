@@ -48,6 +48,7 @@ const rows = `
 自訂卡可參戰；場地採先進入佇列的玩家設定。|Custom cards allowed. The first queued player chooses the field.|カスタムカード使用可。先に待機したプレイヤーのフィールド設定を使用。|Se permiten cartas personalizadas. El primer jugador elige el campo.
 匹配服務暫時無法連線|Matchmaking is temporarily unavailable.|マッチングに接続できません。|Emparejamiento no disponible temporalmente.
 無法儲存對局連線|Unable to save the match session.|対戦セッションを保存できません。|No se puede guardar la sesión.
+連線憑證無效|Invalid match credential.|対戦の接続情報が無効です。|Credencial de partida no válida.
 對局已更新，請重試|Match updated. Try again.|対戦が更新されました。再試行してください。|Partida actualizada. Inténtalo de nuevo.
 調整站位|Reposition|配置変更|Cambiar posición
 台詞或備註|Quote or note|セリフやメモ|Frase o nota

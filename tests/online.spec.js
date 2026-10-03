@@ -247,6 +247,35 @@ test('queue cancellation retries a lost request until the ticket is removed',asy
   } finally {await page.unroute('**/api/match/leave');await leave(page);}
 });
 
+test('rejected restored sessions and departures return idle without retrying obsolete credentials',async({page})=>{
+  const requests=[];let rejectLeave=false;
+  await page.addInitScript(()=>sessionStorage.setItem('meme-clash-online','damaged-session'));
+  await page.route('**/api/match/**',route=>{
+    const request=route.request(),action=new URL(request.url()).pathname.split('/').at(-1),authorization=request.headers().authorization;
+    requests.push({action,authorization});
+    if(authorization==='Bearer damaged-session')return route.fulfill({status:401,contentType:'application/json',body:JSON.stringify({error:'連線憑證無效'})});
+    if(action==='leave'&&rejectLeave)return route.fulfill({status:401,contentType:'text/html',body:'Unauthorized'});
+    return route.fulfill({contentType:'application/json',body:JSON.stringify({status:action==='leave'?'idle':'waiting'})});
+  });
+  await prepare(page);const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  await expect(page.getByRole('button',{name:'匹配對戰',exact:true})).toBeVisible();
+  expect(await page.evaluate(()=>sessionStorage.getItem('meme-clash-online'))).toBeNull();
+  await expect(page.locator('#toast')).toHaveText('連線憑證無效');
+  await page.waitForTimeout(1700);expect(requests).toHaveLength(1);
+  await join(page);await expect(page.locator('#online-status')).toHaveText('尋找對手中');
+  const first=await page.evaluate(()=>sessionStorage.getItem('meme-clash-online'));expect(first).toMatch(/^[a-f0-9-]{73}$/);
+  rejectLeave=true;await page.getByRole('button',{name:'取消匹配',exact:true}).click();
+  await expect(page.getByRole('button',{name:'匹配對戰',exact:true})).toBeVisible();
+  expect(await page.evaluate(()=>sessionStorage.getItem('meme-clash-online'))).toBeNull();
+  const count=requests.length;await page.waitForTimeout(1700);expect(requests).toHaveLength(count);
+  await join(page);await expect(page.locator('#online-status')).toHaveText('尋找對手中');
+  const next=await page.evaluate(()=>sessionStorage.getItem('meme-clash-online'));expect(next).toMatch(/^[a-f0-9-]{73}$/);expect(next).not.toBe(first);
+  expect(requests.at(-1)).toEqual({action:'join',authorization:`Bearer ${next}`});
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+  rejectLeave=false;await page.getByRole('button',{name:'取消匹配',exact:true}).click();
+  await expect(page.getByRole('button',{name:'匹配對戰',exact:true})).toBeVisible();
+});
+
 test('matchmaking can be cancelled and reports an unavailable service without a fake opponent',async({page})=>{
   await prepare(page);await join(page);await expect(page.locator('#online-status')).toHaveText('尋找對手中');
   await page.getByRole('button',{name:'取消匹配',exact:true}).click();
