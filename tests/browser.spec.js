@@ -3,6 +3,27 @@ import { freshProfile, parseProfile } from '../src/storage.js';
 import { CATALOG } from '../src/catalog.js';
 import { DRAFT_KEY } from '../src/draft.js';
 
+test('arena image cache stays bounded while reusing active art and reloading evicted images',async({page})=>{
+  test.skip(!!process.env.TEST_BASE_URL,'Image cache instrumentation requires the managed Vite source server.');
+  await page.route('**/cache-test/*.svg',route=>route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="red"/></svg>'}));
+  await page.goto('/');
+  const result=await page.evaluate(async()=>{
+    const {Arena}=await import('/src/arena.js'),{createGame}=await import('/src/game.js');
+    const canvas=document.createElement('canvas'),game=createGame(),arena=new Arena(canvas,game,()=>{},()=>{});arena.destroy();
+    const set=Map.prototype.set;let cache;
+    Map.prototype.set=function(key,value){if(typeof key==='string'&&key.startsWith('/cache-test/'))cache=this;return set.call(this,key,value);};
+    const unit={...game.units[0],image:'/cache-test/hot.svg'};
+    try{
+      arena.drawUnit(unit,100,100);const hot=cache.get(unit.image);let first;
+      for(let i=0;i<260;i++){arena.drawUnit({...unit,image:`/cache-test/${i}.svg`},100,100);if(i===0)first=cache.get('/cache-test/0.svg');arena.drawUnit(unit,100,100);}
+      const size=cache.size,hotReused=cache.get(unit.image)===hot,oldestEvicted=!cache.has('/cache-test/0.svg');
+      arena.drawUnit({...unit,image:'/cache-test/0.svg'},100,100);const reloaded=cache.get('/cache-test/0.svg');await reloaded.decode();arena.drawUnit({...unit,image:'/cache-test/0.svg'},100,100);
+      return {size,finalSize:cache.size,hotReused,oldestEvicted,reloaded:reloaded!==first,pixel:[...arena.ctx.getImageData(100,100,1,1).data]};
+    }finally{Map.prototype.set=set;arena.destroy();}
+  });
+  expect(result.size).toBeLessThanOrEqual(128);expect(result.finalSize).toBeLessThanOrEqual(128);expect(result.hotReused).toBeTruthy();expect(result.oldestEvicted).toBeTruthy();expect(result.reloaded).toBeTruthy();expect(result.pixel).toEqual([255,0,0,255]);
+});
+
 test('discarding a new card draft confirms first and clears only after storage removal succeeds',async({page})=>{
   await page.goto('/');await page.locator('[data-nav="workshop"]').click();
   await page.locator('#card-form [name="name"]').fill('準備放棄的草稿');await page.locator('#card-form [name="hp"]').fill('');

@@ -6,8 +6,11 @@ import { tr } from './i18n.js';
 const images = new Map();
 function imageFor(url) {
   if (!url) return null;
-  if (!images.has(url)) { const image = new Image(); image.crossOrigin = 'anonymous'; image.src = url; images.set(url, image); }
-  const image = images.get(url);
+  let image = images.get(url);
+  if (!image) { image = new Image(); image.crossOrigin = 'anonymous'; image.src = url; }
+  images.delete(url); images.set(url, image);
+  // ponytail: cap image references, not decoded bytes; add a byte budget if large art dominates memory.
+  if (images.size > 128) images.delete(images.keys().next().value);
   return image.complete && image.naturalWidth ? image : null;
 }
 export class Arena {
