@@ -60,7 +60,7 @@ function onlineStatus() {
 }
 function receiveOnline(state) {
   if (state.status==='idle') {
-    const previous=online;online=null;onlineBusy=false;replayKey='';
+    const previous=online;online=null;onlineBusy=false;replaying=false;replayKey='';
     if(previous){game=createGame({catalog,deck:validDeck()});screen='battle';render();}
     return;
   }

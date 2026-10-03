@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { DEFAULT_DECK } from '../src/catalog.js';
+import { loadout, makeRoom, command, view } from '../server/matches.js';
 
 test('local D1 handles simultaneous queues, duplicate commands and cancellation without orphan players',async({page,baseURL})=>{
   test.skip(!['localhost','127.0.0.1','[::1]'].includes(new URL(baseURL).hostname),'Queue bursts run only against the local test database.');
@@ -273,6 +274,38 @@ test('rejected restored sessions and departures return idle without retrying obs
   expect(requests.at(-1)).toEqual({action:'join',authorization:`Bearer ${next}`});
   expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
   rejectLeave=false;await page.getByRole('button',{name:'取消匹配',exact:true}).click();
+  await expect(page.getByRole('button',{name:'匹配對戰',exact:true})).toBeVisible();
+});
+
+for(const [termination,width] of [['idle',1440],['401',390]])test(`interrupted online replays recover after ${termination} and allow a new match`,async({page})=>{
+  await page.setViewportSize({width,height:1080});
+  const deck=loadout({deck:DEFAULT_DECK,custom:[],field:'grid'}),room=makeRoom(deck,deck,1000);
+  const initial=view(room,0,0,'replay-reset',1000,1000);
+  command(room,0,{action:'ready'},1000);command(room,1,{action:'ready'},1000);
+  const replay=view(room,0,2,'replay-reset',1000,1000);replay.replay.duration=30000;
+  let response=initial,joins=0,rejected=false;const errors=[];
+  page.on('pageerror',error=>errors.push(error.message));
+  await page.route('**/api/match/**',route=>{
+    const action=new URL(route.request().url()).pathname.split('/').at(-1);
+    if(action==='state'&&rejected)return route.fulfill({status:401,contentType:'text/html',body:'Unauthorized'});
+    const state=action==='leave'?{status:'idle'}:action==='join'&&++joins>1?{status:'waiting'}:response;
+    return route.fulfill({contentType:'application/json',body:JSON.stringify(state)});
+  });
+  await prepare(page);const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  await join(page);await expect(page.locator('#online-status')).toContainText('輪到你部署');
+  const token=await page.evaluate(()=>sessionStorage.getItem('meme-clash-online'));
+  response=replay;await expect(page.locator('.duel-board')).toHaveClass(/is-battling/);
+  response={status:'idle'};rejected=termination==='401';
+  await expect(page.getByRole('button',{name:'匹配對戰',exact:true})).toBeVisible();
+  expect(await page.evaluate(()=>sessionStorage.getItem('meme-clash-online'))).toBeNull();
+  rejected=false;response={status:'waiting'};await join(page);
+  await expect(page.locator('#online-status')).toHaveText('尋找對手中');
+  expect(await page.evaluate(()=>sessionStorage.getItem('meme-clash-online'))).not.toBe(token);
+  response=initial;await expect(page.locator('#online-status')).toContainText('輪到你部署');
+  await expect(page.getByRole('button',{name:'完成部署',exact:true})).toBeEnabled();
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);expect(errors).toEqual([]);
+  await page.getByRole('button',{name:'離開對局',exact:true}).click();
+  await page.getByRole('button',{name:'確認離開',exact:true}).click();
   await expect(page.getByRole('button',{name:'匹配對戰',exact:true})).toBeVisible();
 });
 
