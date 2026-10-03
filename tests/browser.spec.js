@@ -187,6 +187,31 @@ test('collection sorts every matching card before pagination without changing sa
   expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
 });
 
+test('named deck drafts save empty and role-free builds but cannot start a duel',async({page})=>{
+  const profile=freshProfile();profile.deck=[];
+  await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);
+  await page.goto('/');await page.locator('[data-nav="workshop"]').click();await page.getByLabel('卡組名稱',{exact:true}).fill('未完成構思');await page.getByRole('button',{name:'保存卡組',exact:true}).click();
+  await expect(page.locator('#toast')).toContainText('卡組草稿已保存');
+  const draft=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).decks[0]);expect(draft.deck).toEqual([]);
+  const unit=CATALOG.find(c=>c.type==='monster').id;
+  await page.locator('[data-nav="collection"]').click();await page.locator(`.catalog-grid [data-card="${unit}"]`).click();await page.locator(`[data-add="${unit}"]`).click();
+  await page.locator('[data-nav="workshop"]').click();await page.getByRole('button',{name:'保存卡組',exact:true}).click();await page.locator('#confirm-save-deck').click();await expect(page.locator('#toast')).toHaveText('卡組草稿已保存');
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).decks[0].deck)).toEqual([unit]);await page.locator(`[data-remove="${unit}"]`).click();
+  const cards=['tape','imagination','stonks','handshake','reverse','safe','suit','fusion','tape','imagination'];
+  await page.locator('[data-nav="collection"]').click();
+  for(const id of cards){await page.locator(`.catalog-grid [data-card="${id}"]`).click();await page.locator(`[data-add="${id}"]`).click();}
+  await page.locator('[data-nav="workshop"]').click();await page.getByRole('button',{name:'保存卡組',exact:true}).click();await page.locator('#confirm-save-deck').click();
+  const updated=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).decks[0]);expect(updated).toEqual({...draft,deck:cards});
+  await page.getByRole('button',{name:'使用卡組對決',exact:true}).click();await page.locator('#match-form [type="submit"]').click();await expect(page.locator('#match-error')).toContainText('角色');await page.keyboard.press('Escape');
+  await page.locator('[data-preset="chaos"]').click();await page.getByLabel('卡組名稱',{exact:true}).fill('完整構思');await page.getByRole('button',{name:'保存卡組',exact:true}).click();await expect(page.locator('#toast')).toHaveText('卡組已保存');
+  await page.getByLabel('已保存卡組',{exact:true}).selectOption(draft.id);await page.reload();await page.locator('[data-nav="workshop"]').click();await page.getByLabel('已保存卡組',{exact:true}).selectOption(draft.id);
+  const stored=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));expect(stored.deck).toEqual(cards);expect(stored.decks).toHaveLength(2);expect(stored.decks[0]).toEqual(updated);
+  const file=page.waitForEvent('download');await page.getByRole('button',{name:'匯出',exact:true}).click();const stream=await (await file).createReadStream(),chunks=[];for await(const chunk of stream)chunks.push(chunk);const buffer=Buffer.concat(chunks);
+  expect(parseProfile(JSON.parse(buffer.toString('utf8'))).decks).toEqual(stored.decks);
+  const chooser=page.waitForEvent('filechooser');await page.locator('[data-action="import"]').click();await (await chooser).setFiles({name:'drafts.json',mimeType:'application/json',buffer});await page.locator('#confirm-import').click();
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')))).toEqual(stored);
+});
+
 test('saved deck workshop saves, switches, overwrites, reloads, exports and deletes independently',async({page})=>{
   await page.goto('/');await page.locator('[data-nav="workshop"]').click();
   await page.getByLabel('卡組名稱',{exact:true}).fill('魔法工坊');await page.getByRole('button',{name:'保存卡組',exact:true}).click();
@@ -375,7 +400,8 @@ test('deleting a custom card removes it from every saved deck while preserving d
   const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));
   expect(saved.custom).toEqual([]);expect(saved.deck).not.toContain('custom-deck');expect(saved.decks[0]).toEqual({id:'deck-custom',name:'保留名稱',deck:[]});expect(saved.decks[1].deck).not.toContain('custom-deck');
   await page.reload();await page.locator('[data-nav="workshop"]').click();await page.getByLabel('已保存卡組',{exact:true}).selectOption('deck-custom');await expect(page.locator('.deck-count')).toHaveText('0/30');
-  await page.getByRole('button',{name:'保存卡組',exact:true}).click();await expect(page.locator('#toast')).toContainText('卡組至少 10 張');
+  await page.getByRole('button',{name:'保存卡組',exact:true}).click();await page.locator('#confirm-save-deck').click();await expect(page.locator('#toast')).toHaveText('卡組草稿已保存');
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).decks[0])).toEqual({id:'deck-custom',name:'保留名稱',deck:[]});
 });
 
 async function dragDeck(page,type='monster') {

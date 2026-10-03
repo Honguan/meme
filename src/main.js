@@ -105,7 +105,6 @@ function recoveryDialog() {
 function saveDeck() {
   const name = $('#deck-name').value.trim();
   if (!name || name.length > 48) return toast('卡組名稱需為 1 至 48 字');
-  if (profile.deck.length < 10 || !profile.deck.some(id => catalog.find(c => c.id === id)?.type === 'monster')) return toast('卡組至少 10 張，且需包含角色卡');
   if (profile.deck.length > 30) return toast('卡組已滿：最多 30 張');
   if (profile.deck.some(id => profile.deck.filter(card => card === id).length > 2)) return toast('同一張卡最多放入 2 張');
   const existing = profile.decks.find(saved => saved.id === savedDeckId && saved.name === name) || profile.decks.find(saved => saved.name === name);
@@ -116,7 +115,7 @@ function saveDeck() {
     const saved = { id, name, deck: [...profile.deck] };
     const decks = existing ? profile.decks.map(item => item.id === id ? saved : item) : [...profile.decks, saved];
     if (!persist({ ...profile, decks })) return;
-    savedDeckId = id; deckName = name; modal.close(); render(); toast('卡組已保存');
+    savedDeckId = id; deckName = name; modal.close(); render(); toast(saved.deck.length<10||!saved.deck.some(id=>catalog.find(c=>c.id===id)?.type==='monster')?'卡組草稿已保存':'卡組已保存');
   };
   if (!existing) return save();
   openDialog(`<div class="dialog-heading"><h2>覆寫已保存卡組？</h2><p data-original>${esc(name)}</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-save-deck">${icon('save')} 確認覆寫</button></div>`, 'small-modal');
