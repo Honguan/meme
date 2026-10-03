@@ -270,6 +270,8 @@ function openDialog(html, className = '') {
   if (modal.open) modal.close();
   modal.className = className;
   modal.innerHTML = `<button class="icon-button close-dialog" data-action="close" aria-label="關閉" title="關閉">${icon('x')}</button>${html}`;
+  $('h2',modal).id = 'dialog-title';
+  modal.setAttribute('aria-labelledby','dialog-title');
   localize(modal);modal.showModal(); drawIcons();
 }
 function appearanceDialog() {

@@ -729,6 +729,31 @@ test('dragging near the top edge scrolls a short viewport back to the board',asy
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
 });
 
+test('dialogs use their current localized heading as an accessible name',async({page})=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  const profile=freshProfile();profile.custom=[{id:'custom-dialog-name',name:'魔法陷阱的角色',type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'',effects:[]}];
+  await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),profile);
+  await page.goto('/');const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  const check=async()=>await expect(page.getByRole('dialog')).toHaveAccessibleName(await page.locator('#modal h2').innerText());
+  for(const width of [1440,390]){
+    await page.setViewportSize({width,height:844});
+    await page.locator('[data-action="appearance"]').click();
+    for(const locale of ['zh-Hant','en','ja','es']){
+      await page.locator('#interface-language').selectOption(locale);await check();
+    }
+    await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.locator('[data-action="new"]').first().click();await check();
+    await page.keyboard.press('Escape');
+    await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');
+    await page.locator('[data-card="custom-dialog-name"]').click();
+    await expect(page.getByRole('dialog')).toHaveAccessibleName('魔法陷阱的角色');
+    await page.locator('[data-delete="custom-dialog-name"]').click();await check();
+    await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+  }
+  expect(errors).toEqual([]);
+});
+
 test('language changes preserve the duel, localize each view and persist on mobile',async({page})=>{
   test.setTimeout(60000);
   const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto('/');
