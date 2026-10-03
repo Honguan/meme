@@ -413,6 +413,54 @@ test('large exported backups restore every custom card and oversized imports pre
   expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')))).toEqual(original);
 });
 
+test('saved deck rename works at capacity without changing cards or identity',async({page},testInfo)=>{
+  const profile=freshProfile();profile.decks=Array.from({length:20},(_,i)=>({id:`deck-rename-${i}`,name:`組 ${i}`,deck:profile.deck.slice(i%3)}));
+  await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);
+  await page.goto('/');await page.locator('[data-nav="workshop"]').click();
+  await expect(page.locator('[data-action="rename-deck"]')).toBeDisabled();
+  await page.locator('#saved-deck').selectOption('deck-rename-0');await page.locator('.deck-list [data-remove]').first().click();
+  const before=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));
+  await page.locator('[data-action="rename-deck"]').click();await page.getByRole('button',{name:'取消',exact:true}).click();
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')))).toEqual(before);
+  await page.locator('[data-action="rename-deck"]').click();const name=page.locator('#rename-deck-form input');
+  await name.fill('   ');await name.press('Enter');await expect(page.locator('#rename-error')).toContainText('卡組名稱需為 1 至 48 字');
+  await name.evaluate(input=>{input.value='x'.repeat(49);input.form.requestSubmit();});await expect(page.locator('#rename-error')).toContainText('卡組名稱需為 1 至 48 字');
+  await name.fill('組 1');await name.press('Enter');await expect(page.locator('#rename-error')).toContainText('已有同名卡組');
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')))).toEqual(before);
+  await name.fill('組 0');await name.press('Enter');await expect(page.locator('dialog')).toBeHidden();
+  await page.locator('[data-action="rename-deck"]').click();const renamed='新名字 "<meme>"';await name.fill(renamed);await name.press('Enter');
+  await expect(page.locator('dialog')).toBeHidden();await expect(page.locator('#saved-deck')).toHaveValue('deck-rename-0');await expect(page.locator('#deck-name')).toHaveValue(renamed);
+  const expected={...before,decks:before.decks.map((deck,i)=>i===0?{...deck,name:renamed}:deck)};
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')))).toEqual(expected);
+  await page.screenshot({path:testInfo.outputPath('rename-desktop.png')});await page.setViewportSize({width:390,height:844});
+  await expect(page.locator('[data-action="rename-deck"]')).toBeVisible();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  const select=await page.locator('#saved-deck').boundingBox(),button=await page.locator('[data-action="rename-deck"]').boundingBox(),remove=await page.locator('[data-action="delete-deck"]').boundingBox();
+  expect(select.x+select.width).toBeLessThanOrEqual(button.x);expect(button.x+button.width).toBeLessThanOrEqual(remove.x);
+  await page.locator('#saved-deck').scrollIntoViewIfNeeded();await page.screenshot({path:testInfo.outputPath('rename-mobile.png')});
+  await page.locator('[data-action="rename-deck"]').click();await expect(name).toHaveValue(renamed);await page.screenshot({path:testInfo.outputPath('rename-dialog-mobile.png')});
+  await page.getByRole('button',{name:'取消',exact:true}).click();
+  await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(page.locator('#saved-deck option[value="deck-rename-0"]')).toHaveText(renamed);
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')))).toEqual(expected);
+});
+
+test('saved deck rename retains input on quota failure and rejects stale writes',async({page})=>{
+  const profile=freshProfile();profile.decks=[{id:'deck-rename',name:'原始組',deck:[...profile.deck]}];
+  await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);
+  await page.goto('/');await page.locator('[data-nav="workshop"]').click();await page.locator('#saved-deck').selectOption('deck-rename');
+  const stored=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  await page.evaluate(()=>{window.storageFails=true;const setItem=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){if(key==='meme-clash-v1'&&window.storageFails)throw new DOMException('Quota exceeded','QuotaExceededError');return setItem.call(this,key,value);};});
+  await page.locator('[data-action="rename-deck"]').click();const name=page.locator('#rename-deck-form input');await name.fill('新名字');await name.press('Enter');
+  await expect(page.locator('#toast')).toContainText('瀏覽器儲存空間不足');await expect(name).toHaveValue('新名字');await expect(page.locator('#deck-name')).toHaveValue('原始組');
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);
+  await page.evaluate(()=>window.storageFails=false);await name.press('Enter');await expect(page.locator('dialog')).toBeHidden();
+  await page.locator('[data-action="rename-deck"]').click();await name.fill('不能覆蓋其他分頁');
+  const external=await page.evaluate(()=>{const profile=JSON.parse(localStorage.getItem('meme-clash-v1'));profile.decks[0].name='其他分頁';const raw=JSON.stringify(profile);localStorage.setItem('meme-clash-v1',raw);return raw;});
+  await name.press('Enter');await expect(name).toHaveValue('不能覆蓋其他分頁');await expect(page.locator('#deck-name')).toHaveValue('新名字');
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(external);
+  await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(page.locator('#saved-deck option[value="deck-rename"]')).toHaveText('其他分頁');
+});
+
 test('saved deck and import quota failures preserve stored and live data until successful retry',async({page})=>{
   const original=freshProfile();original.decks=[{id:'deck-old',name:'原始組',deck:[...original.deck]},{id:'deck-other',name:'其他組',deck:original.deck.slice(1)}];
   await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),original);

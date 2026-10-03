@@ -1,4 +1,4 @@
-import { createIcons, Swords, Layers, Hammer, Search, SlidersHorizontal, ArrowUpRight, ArrowRight, ArrowLeft, Plus, Minus, X, Zap, Shield, Heart, Sparkles, Volume2, VolumeX, RotateCcw, Github, Download, Upload, RefreshCw, Trash2, Check, ChevronRight, Target, Flame, Trophy, Palette, Save } from 'lucide';
+import { createIcons, Swords, Layers, Hammer, Search, SlidersHorizontal, ArrowUpRight, ArrowRight, ArrowLeft, Plus, Minus, X, Zap, Shield, Heart, Sparkles, Volume2, VolumeX, RotateCcw, Github, Download, Upload, RefreshCw, Trash2, Check, ChevronRight, Target, Flame, Trophy, Palette, Save, Pencil } from 'lucide';
 import { CATALOG, TYPES, TAGS, FIELDS, ACTIONS, TARGETS, TRIGGERS, PRESETS, WORLD_COVERAGE, templateCards, validateCustom, effectText } from './catalog.js';
 import { ARCHETYPES } from './semantics.js';
 import { createGame, createDailyGame, randomWorldDeck, playCard, playError, units, combos, planAI, finishRound, isUnit, moveUnit } from './game.js';
@@ -13,7 +13,7 @@ import { loadDraft, saveDraft } from './draft.js';
 import './style.css';
 import './duel.css';
 
-const icons = { Swords, Layers, Hammer, Search, SlidersHorizontal, ArrowUpRight, ArrowRight, ArrowLeft, Plus, Minus, X, Zap, Shield, Heart, Sparkles, Volume2, VolumeX, RotateCcw, Github, Download, Upload, RefreshCw, Trash2, Check, ChevronRight, Target, Flame, Trophy, Palette, Save };
+const icons = { Swords, Layers, Hammer, Search, SlidersHorizontal, ArrowUpRight, ArrowRight, ArrowLeft, Plus, Minus, X, Zap, Shield, Heart, Sparkles, Volume2, VolumeX, RotateCcw, Github, Download, Upload, RefreshCw, Trash2, Check, ChevronRight, Target, Flame, Trophy, Palette, Save, Pencil };
 document.documentElement.dataset.theme=loadTheme();
 const $ = (s, root = document) => root.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -223,7 +223,7 @@ function collectionHTML() {
 }
 function deckSidebar() {
   const count = new Map(); profile.deck.forEach(id=>count.set(id,(count.get(id)||0)+1));
-  const savedControls = `<div class="saved-decks"><label for="saved-deck">已保存卡組</label><div class="saved-deck-row"><select id="saved-deck"><option value="">選擇卡組</option>${profile.decks.map(saved=>`<option data-original value="${esc(saved.id)}" ${saved.id===savedDeckId?'selected':''}>${esc(saved.name)}</option>`).join('')}</select><button class="icon-button" data-action="delete-deck" title="刪除已保存卡組" aria-label="刪除已保存卡組" ${savedDeckId?'':'disabled'}>${icon('trash-2')}</button></div><label for="deck-name">卡組名稱</label><div class="saved-deck-row"><input id="deck-name" value="${esc(deckName)}" maxlength="48" autocomplete="off"><button class="icon-button" data-action="save-deck" title="保存卡組" aria-label="保存卡組">${icon('save')}</button></div></div>`;
+  const savedControls = `<div class="saved-decks"><label for="saved-deck">已保存卡組</label><div class="saved-deck-row deck-select-row"><select id="saved-deck"><option value="">選擇卡組</option>${profile.decks.map(saved=>`<option data-original value="${esc(saved.id)}" ${saved.id===savedDeckId?'selected':''}>${esc(saved.name)}</option>`).join('')}</select><button class="icon-button" data-action="rename-deck" title="重新命名卡組" aria-label="重新命名卡組" ${savedDeckId?'':'disabled'}>${icon('pencil')}</button><button class="icon-button" data-action="delete-deck" title="刪除已保存卡組" aria-label="刪除已保存卡組" ${savedDeckId?'':'disabled'}>${icon('trash-2')}</button></div><label for="deck-name">卡組名稱</label><div class="saved-deck-row"><input id="deck-name" value="${esc(deckName)}" maxlength="48" autocomplete="off"><button class="icon-button" data-action="save-deck" title="保存卡組" aria-label="保存卡組">${icon('save')}</button></div></div>`;
   return `<aside class="deck-sidebar"><div class="aside-title"><h2>我的卡組</h2><b class="deck-count ${profile.deck.length<10?'warning':''}">${profile.deck.length}<small>/30</small></b></div>${savedControls}<div class="deck-list">${[...count].map(([id,n])=>{const c=catalog.find(c=>c.id===id);return c?`<div class="deck-row">${image(c)}<span><b>${esc(c.name)}</b><small>${TYPES[c.type]} · ${c.cost} 能量</small></span><b>×${n}</b><button class="icon-button small" data-remove="${esc(id)}" title="移除一張" aria-label="移除 ${esc(c.name)}">${icon('minus')}</button></div>`:'';}).join('')||'<p class="empty-state">尚未加入卡牌</p>'}</div><button class="primary-button" data-action="new">${icon('swords')} 使用卡組對決</button><div class="deck-tools"><button class="quiet-button" data-action="export">${icon('download')} 匯出</button><button class="quiet-button" data-action="import">${icon('upload')} 匯入</button></div></aside>`;
 }
 function effectRow(value = { trigger: 'play', action: 'shield', target: 'self', amount: 3 }) {
@@ -489,6 +489,17 @@ document.addEventListener('click', e => {
   }
   switch(button.dataset.action) {
     case 'save-deck': saveDeck();break;
+    case 'rename-deck': {
+      const saved=profile.decks.find(item=>item.id===savedDeckId);if(!saved)break;
+      openDialog(`<div class="dialog-heading"><h2>重新命名卡組</h2></div><form id="rename-deck-form"><label>卡組名稱<input name="name" maxlength="48" value="${esc(saved.name)}" required></label><p class="form-error" id="rename-error" role="alert"></p><div class="dialog-actions"><button class="quiet-button" type="button" data-action="close">取消</button><button class="primary-button" type="submit">${icon('check')} 儲存修改</button></div></form>`,'small-modal');
+      $('#rename-deck-form').onsubmit=e=>{
+        e.preventDefault();const name=new FormData(e.currentTarget).get('name').trim();
+        if(!name||name.length>48){$('#rename-error').textContent=tr('卡組名稱需為 1 至 48 字');return;}
+        if(profile.decks.some(item=>item.id!==saved.id&&item.name===name)){$('#rename-error').textContent=tr('已有同名卡組');return;}
+        if(!persist({...profile,decks:profile.decks.map(item=>item.id===saved.id?{...item,name}:item)}))return;
+        deckName=name;modal.close();render();toast('卡組已重新命名');
+      };break;
+    }
     case 'delete-deck': {
       const saved=profile.decks.find(item=>item.id===savedDeckId);if(!saved)break;
       openDialog(`<div class="dialog-heading"><h2>刪除已保存卡組？</h2><p data-original>${esc(saved.name)}</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-delete-deck">${icon('trash-2')} 刪除</button></div>`,'small-modal');

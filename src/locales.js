@@ -15,6 +15,9 @@ const rows = `
 確認覆寫|Confirm overwrite|上書きを確認|Confirmar sobrescritura
 卡組已保存|Deck saved|デッキを保存しました|Mazo guardado
 卡組草稿已保存|Deck draft saved|デッキの下書きを保存しました|Borrador del mazo guardado
+重新命名卡組|Rename deck|デッキ名を変更|Renombrar mazo
+已有同名卡組|A deck with this name already exists.|同じ名前のデッキが存在します。|Ya existe un mazo con este nombre.
+卡組已重新命名|Deck renamed|デッキ名を変更しました|Mazo renombrado
 最多保存 20 組卡組|You can save up to 20 decks.|保存できるデッキは20組までです。|Puedes guardar hasta 20 mazos.
 最多保存 1000 張自訂卡牌|You can save up to 1000 custom cards.|保存できるカスタムカードは1000枚までです。|Puedes guardar hasta 1000 cartas personalizadas.
 卡組名稱需為 1 至 48 字|Deck name must contain 1 to 48 characters.|デッキ名は1～48文字にしてください。|El nombre debe tener entre 1 y 48 caracteres.
