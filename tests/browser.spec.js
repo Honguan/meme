@@ -4,6 +4,7 @@ import { CATALOG } from '../src/catalog.js';
 import { DRAFT_KEY } from '../src/draft.js';
 
 test('failed card art falls back without changing authored names or saved data',async({page},testInfo)=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
   const profile=freshProfile();profile.custom=['broken','working','empty'].map((id,i)=>({id:`custom-art-${id}`,name:['生命故障圖','生命正常圖','生命無圖'][i],type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:i===2?'':`https://art.test/${id}.png`,flavor:'',effects:[]}));profile.deck[0]=profile.custom[0].id;
   await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),profile);
   await page.route('https://art.test/broken.png',route=>route.fulfill({status:404,body:'missing'}));
@@ -22,9 +23,11 @@ test('failed card art falls back without changing authored names or saved data',
   expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')))).toEqual(profile);
   await page.setViewportSize({width:390,height:844});await broken.scrollIntoViewIfNeeded();await page.screenshot({path:testInfo.outputPath('failed-art-mobile.png')});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
 });
 
 test('failed duel art fits avatars and occupied lanes on desktop and mobile',async({page},testInfo)=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
   const profile=freshProfile();profile.custom=Array.from({length:5},(_,i)=>({id:`custom-duel-art-${i}`,name:`生命角色 ${i}`,type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'https://art.test/broken.png',flavor:'',effects:[]}));profile.deck=profile.custom.flatMap(c=>[c.id,c.id]);
   await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),profile);await page.route('https://art.test/broken.png',route=>route.fulfill({status:404,body:'missing'}));await page.goto('/');
   const art=page.locator('.board-slot.side-0.occupied>.art-fallback'),avatar=page.locator('.player-hud.side-0 .art-fallback');await expect(art).toHaveText('生命');await expect(avatar).toHaveText('生命');
@@ -34,6 +37,7 @@ test('failed duel art fits avatars and occupied lanes on desktop and mobile',asy
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:testInfo.outputPath(`failed-duel-${width}.png`)});
   }
   expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')))).toEqual(profile);
+  expect(errors).toEqual([]);
 });
 
 test('arena image cache stays bounded while reusing active art and reloading evicted images',async({page})=>{

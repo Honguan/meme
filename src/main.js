@@ -599,7 +599,6 @@ document.addEventListener('submit', e=>{
     } catch(error) {$('#form-error').textContent=tr(error.message);}
   }
 });
-document.addEventListener('error', e=>{if(e.target instanceof HTMLImageElement) {const parent=e.target.parentElement;e.target.remove();parent.classList.add('image-failed');parent.setAttribute('data-fallback','MEME');}},true);
 modal.addEventListener('click',e=>{if(e.target===modal&&!handoff){const r=modal.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)modal.close();}});
 modal.addEventListener('cancel',e=>{if(handoff)e.preventDefault();});
 window.addEventListener('hashchange',()=>{if(location.hash==='#battle'&&game.phase!=='battle'){screen='battle';render();}});
