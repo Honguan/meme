@@ -41,6 +41,34 @@ test('local D1 handles simultaneous queues, duplicate commands and cancellation 
   } else expect(result.remaining.status).toBe('waiting');
 });
 
+test('local D1 lets both players dismiss a completed match at the same time',async({page,baseURL})=>{
+  test.skip(!['localhost','127.0.0.1','[::1]'].includes(new URL(baseURL).hostname),'Synthetic matches run only against the local test database.');
+  await page.goto('/');
+  const result=await page.evaluate(async()=>{
+    const keys=Array.from({length:2},()=>`${crypto.randomUUID()}-${crypto.randomUUID()}`);
+    const call=async(key,action='state',data={})=>{
+      const response=await fetch(`/api/match/${action}`,{method:action==='state'?'GET':'POST',headers:{authorization:`Bearer ${key}`,'content-type':'application/json'},...(action==='state'?{}:{body:JSON.stringify(data)})});
+      return {http:response.status,...await response.json()};
+    };
+    const custom=Array.from({length:10},(_,i)=>({id:`custom-dismiss-${i}`,name:`Dismiss ${i}`,type:'monster',tag:'bonk',cost:0,attack:1,hp:20,speed:5,image:'',flavor:'',effects:[{trigger:'play',action:'damage',target:'self',amount:99},{trigger:'play',action:'draw',target:'self',amount:9}]}));
+    const loadout={deck:custom.map(card=>card.id),custom,field:'grid'};
+    try {
+      await call(keys[0],'join',loadout);await call(keys[1],'join',loadout);
+      const states=await Promise.all(keys.map(key=>call(key))),active=states.findIndex(state=>state.side===state.turn);
+      let state=states[active];const plays=[];
+      for(let i=0;i<10;i++){state=await call(keys[active],'play',{version:state.version,index:0});plays.push(state.http);}
+      const finished=await Promise.all(keys.map(key=>call(key)));
+      const dismissed=await Promise.all(keys.map(key=>call(key,'leave')));
+      return {plays,finished,dismissed,after:await Promise.all(keys.map(key=>call(key)))};
+    } finally {await Promise.all(keys.map(key=>call(key,'leave')));}
+  });
+  expect(result.plays).toEqual(Array(10).fill(200));
+  expect(result.finished.every(state=>state.http===200&&state.game.phase==='over')).toBeTruthy();
+  expect(result.finished[0].game.winner).toBe(result.finished[1].game.winner);
+  expect(result.dismissed.every(state=>state.http===200&&state.status==='idle')).toBeTruthy();
+  expect(result.after.every(state=>state.http===200&&state.status==='idle')).toBeTruthy();
+});
+
 async function prepare(page) {
   const custom=Array.from({length:10},(_,i)=>({id:`custom-online-${i}`,name:`線上測試 ${i}`,type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'',effects:[]}));
   await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),{version:1,custom,deck:custom.map(c=>c.id),web:[],stats:{}});

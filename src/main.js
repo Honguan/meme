@@ -278,9 +278,9 @@ function battleDone(advance = true) {
   }
   if (advance) finishRound(game);
   if (game.phase === 'over' && !counted) {
-    counted = true; profile.stats.games++;
-    if (game.mode === 'ai') { if (game.winner === 0) profile.stats.wins++; else if (game.winner === 1) profile.stats.losses++; }
-    persist();
+    counted = true; const stats = { ...profile.stats, games: profile.stats.games + 1 };
+    if (game.mode === 'ai') { if (game.winner === 0) stats.wins++; else if (game.winner === 1) stats.losses++; }
+    persist({ ...profile, stats });
   }
   render();
   if (game.phase === 'over') openDialog(`<div class="result-dialog">${icon('trophy')}<span class="eyebrow accent">MATCH COMPLETE</span><h2>${game.winner==='draw'?'勢均力敵':game.winner===0?'這局，你贏了！':game.mode==='local'?'玩家 02 獲勝':'這次，網路贏了'}</h2><p>${game.round} 回合 · ${game.collisions} 次碰撞</p><button class="primary-button" data-action="new">再來一局 ${icon('arrow-right')}</button></div>`, 'small-modal');

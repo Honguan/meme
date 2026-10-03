@@ -181,7 +181,7 @@ export async function matchRequest(request, db, now = Date.now()) {
     if (room.game.phase !== 'over' && (now - (peer?.seen || 0) > OFFLINE_TTL || now > room.deadline)) {
       const loser = now - (peer?.seen || 0) > OFFLINE_TTL ? 1 - side : room.game.active;
       room = command(room, loser, { action: 'leave' }, now); changed = true;
-    } else if (!['state','join'].includes(action)) {
+    } else if (!['state','join'].includes(action) && !(action === 'leave' && room.game.phase === 'over')) {
       if (action !== 'leave' && input.version !== row.version) fail('對局已更新，請重試', 409);
       room = command(room, side, { ...input, action }, now); changed = true;
     }

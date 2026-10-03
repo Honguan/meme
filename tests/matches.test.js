@@ -90,6 +90,32 @@ test('cancelling a candidate after selection prevents stale pairing and phantom 
   } finally {resume();await joining;db.sql.close();}
 });
 
+test('both players can dismiss a finished match concurrently without changing its result',async()=>{
+  const db=database(),a=token(),b=token();
+  try {
+    await call(db,a,'join',payload());await call(db,b,'join',payload());
+    const row=db.sql.prepare('SELECT * FROM matches').get();
+    const finished=command(JSON.parse(row.state),0,{action:'leave'},100000);
+    db.sql.prepare('UPDATE matches SET state = ? WHERE id = ?').run(JSON.stringify(finished),row.id);
+    const before=db.sql.prepare('SELECT state,version FROM matches WHERE id = ?').get(row.id);
+    let readers=0,release;const barrier=new Promise(resolve=>release=resolve),prepare=db.prepare;
+    db.prepare=query=>{
+      const statement=prepare(query);
+      if(query!=='SELECT * FROM matches WHERE id = ?')return statement;
+      return {bind(...args){
+        const bound=statement.bind(...args),first=bound.first;
+        bound.first=async()=>{const result=await first();if(++readers===2)release();await barrier;return result;};
+        return bound;
+      }};
+    };
+    const results=await Promise.all([call(db,a,'leave'),call(db,b,'leave')]);
+    assert.ok(results.every(result=>result.status==='idle'));
+    assert.equal(db.sql.prepare('SELECT COUNT(*) AS count FROM match_tickets').get().count,0);
+    assert.deepEqual(db.sql.prepare('SELECT state,version FROM matches WHERE id = ?').get(row.id),before);
+    assert.equal((await call(db,a)).status,'idle');assert.equal((await call(db,b)).status,'idle');
+  } finally { db.sql.close(); }
+});
+
 test('concurrent commands commit one version and rejected targets leave authoritative state unchanged',async()=>{
   const db=database(),a=token(),b=token();
   await call(db,a,'join',payload());await call(db,b,'join',payload());

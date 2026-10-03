@@ -56,6 +56,34 @@ test('saved deck workshop saves, switches, overwrites, reloads, exports and dele
   await page.locator('#confirm-import').click();expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).decks)).toEqual(exported.decks);
 });
 
+test('failed result saves preserve live statistics and later matches count exactly once',async({page})=>{
+  const profile=freshProfile();profile.stats={wins:3,losses:2,games:5};
+  profile.custom=Array.from({length:10},(_,i)=>({id:`custom-result-${i}`,name:`Result ${i}`,type:'monster',tag:'bonk',cost:0,attack:1,hp:20,speed:5,image:'',flavor:'',effects:[{trigger:'play',action:'damage',target:'self',amount:99}]}));
+  profile.deck=profile.custom.map(card=>card.id);
+  await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);
+  await page.goto('/');
+  await page.getByRole('button',{name:'新對決',exact:true}).click();await page.locator('[name="goal"]').selectOption('knockout');await page.getByRole('button',{name:'開始新對決',exact:true}).click();
+  await page.evaluate(()=>{window.storageFails=true;const setItem=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){if(key==='meme-clash-v1'&&window.storageFails)throw new DOMException('Quota exceeded','QuotaExceededError');return setItem.call(this,key,value);};});
+  const finish=async()=>{
+    for(let i=0;i<5;i++) {
+      await page.locator('.hand-cards .type-monster').first().click();await page.getByRole('button',{name:'卡牌詳情',exact:true}).click();await page.locator('[data-play]').click();
+    }
+    await expect(page.locator('.result-dialog h2')).toHaveText('這次，網路贏了');
+  };
+  await finish();await expect(page.locator('#toast')).toContainText('瀏覽器儲存空間不足');
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).stats)).toEqual(profile.stats);
+  await page.getByRole('button',{name:'關閉',exact:true}).click();await page.locator('[data-nav="workshop"]').click();
+  const download=page.waitForEvent('download');await page.getByRole('button',{name:'匯出',exact:true}).click();
+  const stream=await (await download).createReadStream(),chunks=[];for await(const chunk of stream)chunks.push(chunk);
+  expect(JSON.parse(Buffer.concat(chunks)).stats).toEqual(profile.stats);
+  await page.evaluate(()=>window.storageFails=false);await page.getByLabel('卡組名稱',{exact:true}).fill('Recovered');await page.getByRole('button',{name:'保存卡組',exact:true}).click();
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).stats)).toEqual(profile.stats);
+  await page.locator('[data-nav="battle"]').click();await page.getByRole('button',{name:'新對決',exact:true}).click();await page.getByRole('button',{name:'開始新對決',exact:true}).click();
+  await finish();await page.getByRole('button',{name:'關閉',exact:true}).click();
+  await page.locator('[data-nav="collection"]').click();await page.locator('[data-nav="battle"]').click();await page.reload();
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).stats)).toEqual({wins:3,losses:3,games:6});
+});
+
 test('large exported backups restore every custom card and oversized imports preserve the current profile',async({page})=>{
   const profile=freshProfile();
   profile.custom=Array.from({length:1000},(_,i)=>({id:`custom-backup-${i}`,name:`Backup ${i}`,type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:`https://example.com/${'x'.repeat(1980)}`,flavor:'x'.repeat(160),effects:[]}));
@@ -214,7 +242,10 @@ test('dragging near the top edge scrolls a short viewport back to the board',asy
   await page.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);await page.mouse.down();
   await page.mouse.move(160,10,{steps:12});await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(0);
   const target=await page.locator('.own-formation [data-slot="1"]').boundingBox();
-  await page.mouse.move(target.x+target.width/2,target.y+target.height/2,{steps:8});await page.mouse.up();
+  const point={x:target.x+target.width/2,y:target.y+8};
+  await page.mouse.move(point.x,point.y,{steps:8});
+  expect(await page.evaluate(({x,y})=>document.elementFromPoint(x,y)?.closest('[data-drop]')?.matches('.own-formation [data-slot="1"]'),point)).toBe(true);
+  await page.mouse.up();
   await expect(hand).toHaveCount(4);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
 });
