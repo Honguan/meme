@@ -129,6 +129,19 @@ test('two independent players match, deploy, replay the same battle and reconnec
     expect(initial.id).toBe(peer.id);expect(initial.side).not.toBe(peer.side);
     expect(initial.game.players[1].hand.every(id=>id===null)).toBeTruthy();
     expect(initial.game.players[0].deck.every(id=>id===null)).toBeTruthy();
+    const previewOpponent=async player=>{
+      const before=await state(player);
+      const opponent=before.game.units.find(unit=>unit.side!==before.side);
+      await player.locator('.opponent-formation .occupied').first().click();await expect(player.locator('.card-detail h2')).toHaveText(opponent.name);
+      await player.locator('[data-preview]').click();await expect(player.locator('#modal-preview-stage>b')).toHaveText(opponent.name);
+      const canvas=player.locator('#modal-preview-stage canvas');await expect(canvas).toBeVisible();
+      await expect.poll(()=>canvas.evaluate(canvas=>[...canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data].filter((value,i)=>i%4===3&&value>0).length)).toBeGreaterThan(100);
+      const after=await state(player);expect(after.version).toBe(before.version);expect(after.game).toEqual(before.game);
+      await player.keyboard.press('Escape');
+    };
+    await previewOpponent(first);
+    await first.locator('.hand-cards [data-hand]').first().hover();await expect(first.locator('#card-effect-preview')).toBeVisible();
+    await expect(first.locator('#card-effect-preview>b')).toHaveText(initial.game.cards[initial.game.players[initial.side].hand[0]].name);
     const card=first.locator('.hand-cards [data-hand]').first(),slot=first.locator('.own-formation [data-slot="2"]');
     const from=await card.boundingBox(),to=await slot.boundingBox();
     await first.mouse.move(from.x+from.width/2,from.y+from.height/2);await first.mouse.down();
@@ -137,6 +150,7 @@ test('two independent players match, deploy, replay the same battle and reconnec
     await expect(second.locator('.opponent-formation .occupied')).toHaveCount(2);
     await first.getByRole('button',{name:'完成部署',exact:true}).click();
     await expect(second.locator('#online-status')).toContainText('輪到你部署');
+    await previewOpponent(second);
     await second.getByRole('button',{name:'完成部署',exact:true}).click();
     await expect(first.locator('.duel-board')).toHaveClass(/is-battling/);
     await first.screenshot({path:'.artifacts/online-clash.png'});

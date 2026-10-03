@@ -258,8 +258,9 @@ function openDialog(html, className = '') {
 function appearanceDialog() {
   openDialog(`<div class="dialog-heading"><h2>語言與色系</h2></div><label class="language-choice">介面語言<select id="interface-language">${Object.entries(LANGUAGES).map(([id,name])=>`<option value="${id}" ${getLocale()===id?'selected':''}>${name}</option>`).join('')}</select></label><fieldset class="theme-picker"><legend>配色</legend>${Object.entries(THEMES).map(([id,theme])=>`<label><input type="radio" name="theme" value="${id}" ${document.documentElement.dataset.theme===id?'checked':''}><span class="theme-swatch" style="--swatch:${theme.accent};--rival:${theme.rival}"></span><b>${theme.name}</b></label>`).join('')}</fieldset>`,'small-modal');
 }
+function displayCard(id) { return (screen==='battle'&&game.cards[id]) || catalog.find(c=>c.id===id); }
 function showCard(id, handIndex = null) {
-  const c = handIndex === null ? game.cards[id] || catalog.find(c=>c.id===id) : game.cards[game.players[game.active].hand[handIndex]];
+  const c = handIndex === null ? displayCard(id) : game.cards[game.players[game.active].hand[handIndex]];
   if (!c) return;
   const error = handIndex !== null ? playError(game, game.active, handIndex) : '';
   openDialog(`<div class="card-detail"><div class="detail-art" style="--tag:${TAGS[c.tag].color}">${image(c)}</div><div class="detail-body"><span class="eyebrow" style="color:${TAGS[c.tag].color}">${TYPES[c.type]} / ${TAGS[c.tag].name}</span><h2>${esc(c.name)}</h2><p class="flavor" ${c.origin==='自訂'?'data-original':''}>${esc(c.flavor)}</p><div class="detail-stats"><span>${icon('zap')} ${c.cost} 能量</span>${isUnit(c)?`<span>${icon('swords')} ${c.attack}</span><span>${icon('heart')} ${c.hp}</span>`:''}</div><div class="effect-detail">${c.type==='fusion'?'<p>消耗兩名同陣營角色；繼承素材陣營及一半總攻擊。</p>':''}<p>${esc(effectText(c))}</p></div>
@@ -366,7 +367,7 @@ function queueHoverPreview(button) {
   previewTimer=setTimeout(()=>{
     if (!button.isConnected || modal.open) return;
     const id=button.dataset.card || game.players[game.active].hand[Number(button.dataset.hand)];
-    const card=catalog.find(c=>c.id===id);if(!card)return;
+    const card=displayCard(id);if(!card)return;
     hoverPreview.innerHTML=previewHTML(card);localize(hoverPreview);hoverPreview.hidden=false;
     const rect=button.getBoundingClientRect(),width=hoverPreview.offsetWidth,height=hoverPreview.offsetHeight;
     hoverPreview.style.left=`${Math.max(12,Math.min(innerWidth-width-12,rect.left))}px`;
@@ -442,7 +443,7 @@ document.addEventListener('click', e => {
   const button = e.target.closest('button');
   if (!button || button.disabled) return;
   if (button.dataset.preview) {
-    stopModalPreview?.();const card=catalog.find(c=>c.id===button.dataset.preview);
+    const card=displayCard(button.dataset.preview);if(!card)return;stopModalPreview?.();
     const stage=$('#modal-preview-stage');stage.hidden=false;stage.innerHTML=previewHTML(card);localize(stage);
     stopModalPreview=mountPreview(stage,card);return;
   }

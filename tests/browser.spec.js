@@ -2,6 +2,32 @@ import { test, expect } from '@playwright/test';
 import { freshProfile, parseProfile } from '../src/storage.js';
 import { CATALOG } from '../src/catalog.js';
 
+test('card sources keep imported library details fresh and active battle previews unchanged',async({page})=>{
+  const profile=freshProfile(),original={id:'custom-source-test',name:'當局舊卡',type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'原始效果',effects:[{trigger:'hit',action:'shield',target:'self',amount:3}]};
+  profile.custom=[original];profile.deck=[original.id,'tape','imagination','stonks','handshake','reverse','safe','suit','fusion','tape'];
+  await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto('/');
+  await expect(page.locator('.own-formation .board-unit-name')).toHaveText(original.name);
+  await page.locator('[data-nav="collection"]').click();
+  const incoming={...profile,custom:[{...original,name:'卡庫新版本',attack:9,flavor:'匯入效果',effects:[{trigger:'hit',action:'damage',target:'enemies',amount:9}]}]};
+  const chooser=page.waitForEvent('filechooser');await page.locator('[data-action="import"]').click();await (await chooser).setFiles({name:'updated-card.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(incoming))});
+  await page.locator('#confirm-import').click();const stored=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');
+  const library=page.locator(`.catalog-grid [data-card="${original.id}"]`);await library.hover();
+  await expect(page.locator('#card-effect-preview')).toBeVisible();await expect(page.locator('#card-effect-preview>b')).toHaveText(incoming.custom[0].name);
+  await library.click();await expect(page.locator('.card-detail h2')).toHaveText(incoming.custom[0].name);await expect(page.locator('.effect-detail')).toContainText('9');
+  await page.locator('[data-preview]').click();await expect(page.locator('#modal-preview-stage>b')).toHaveText(incoming.custom[0].name);
+  await page.keyboard.press('Escape');await page.locator('[data-nav="battle"]').click();
+  await expect(page.locator('.own-formation .board-unit-name')).toHaveText(original.name);
+  await page.locator('.own-formation .occupied').click();await page.locator('[data-action="inspect"]').click();
+  await expect(page.locator('.card-detail h2')).toHaveText(original.name);await expect(page.locator('.effect-detail')).toContainText('3');
+  await page.locator('[data-preview]').click();await expect(page.locator('#modal-preview-stage>b')).toHaveText(original.name);
+  await expect(page.locator('#modal-preview-stage canvas')).toBeVisible();await expect(page.locator('.own-formation .board-unit-name')).toHaveText(original.name);
+  await page.locator('[data-preview]').evaluate(button=>button.dataset.preview='missing-card');await page.locator('[data-preview]').click();
+  await expect(page.locator('#modal-preview-stage>b')).toHaveText(original.name);
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);expect(errors).toEqual([]);
+});
+
 test('stale tabs cannot overwrite another tab cards or recovery replacements',async({page,context})=>{
   await page.goto('/');const other=await context.newPage();await other.goto('/');
   const craft=async(tab,name)=>{await tab.locator('[data-nav="workshop"]').click();await tab.locator('#card-form [name="name"]').fill(name);await tab.locator('#card-form [type="submit"]').click();};
