@@ -200,7 +200,7 @@ function inspectorHTML() {
 function collectionHTML() {
   const search=query.toLowerCase();
   const filtered = catalog.filter(c => (filter === 'all' || c.type === filter) && (origin === 'all' || c.origin === origin) && (sourceLanguage === 'all' || (sourceLanguage === 'unknown' ? !c.languages?.length : c.languages?.includes(sourceLanguage))) && (sourceCountry === 'all' || c.countries?.includes(sourceCountry)) && (ability === 'all' || c.archetype === ability) && (!search || `${c.name} ${TAGS[c.tag].name} ${TAGS[c.tag].set} ${c.flavor} ${ARCHETYPES[c.archetype]?.name || ''} ${tr(TAGS[c.tag].name)} ${tr(TAGS[c.tag].set)} ${tr(ARCHETYPES[c.archetype]?.name || '')} ${effectText(c)}`.toLowerCase().includes(search)));
-  if(sortOrder==='name')filtered.sort((a,b)=>a.name.localeCompare(b.name,getLocale(),{numeric:true}));
+  if(sortOrder==='name'){const compare=new Intl.Collator(getLocale(),{numeric:true}).compare;filtered.sort((a,b)=>compare(a.name,b.name));}
   else if(sortOrder==='cost')filtered.sort((a,b)=>a.cost-b.cost);
   else if(sortOrder==='attack'||sortOrder==='hp')filtered.sort((a,b)=>b[sortOrder]-a[sortOrder]);
   return `<main class="collection-page"><div class="page-heading"><h1>卡牌圖鑑</h1><button class="quiet-button" data-action="refresh">${icon('refresh-cw')} 更新網路卡庫</button></div>
