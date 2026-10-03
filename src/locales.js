@@ -205,6 +205,10 @@ const rows = `
 效果連鎖|Effect chain|効果チェーン|Cadena de efectos
 新增效果|Add effect|効果を追加|Añadir efecto
 鑄造卡牌|Create card|カードを作成|Crear carta
+編輯卡牌|Edit card|カードを編集|Editar carta
+取消編輯|Cancel editing|編集をキャンセル|Cancelar edición
+儲存修改|Save changes|変更を保存|Guardar cambios
+卡牌已保存|Card saved|カードを保存しました|Carta guardada
 關閉|Close|閉じる|Cerrar
 能量|Energy|エネルギー|Energía
 播放效果演示|Play effect preview|効果をプレビュー|Ver demostración

@@ -39,8 +39,10 @@ test('stale tabs cannot overwrite another tab cards or recovery replacements',as
   const file=await download,stream=await file.createReadStream(),chunks=[];for await(const chunk of stream)chunks.push(chunk);
   expect(JSON.parse(Buffer.concat(chunks).toString('utf8')).custom).toEqual([]);
   await page.reload();await other.reload();await expect(other.getByRole('heading',{name:'存檔無法讀取',exact:true})).toHaveCount(0);
+  const editing=JSON.parse(first).custom[0].id;await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');await page.locator(`[data-card="${editing}"]`).click();await page.locator(`[data-edit="${editing}"]`).click();await page.locator('#card-form [name="name"]').fill('跨頁衝突的編輯草稿');
   await craft(other,'分頁 B 的新卡');const second=await stored();expect(JSON.parse(second).custom.map(card=>card.name)).toEqual(['分頁 A 的新卡','分頁 B 的新卡']);
   await craft(other,'分頁 B 的第三張卡');const third=await stored();expect(JSON.parse(third).custom).toHaveLength(3);
+  await page.locator('#card-form [type="submit"]').click();await expect(page.locator('#toast')).toContainText('存檔已在其他分頁更新');await expect(page.getByRole('heading',{name:'編輯卡牌',exact:true})).toBeVisible();await expect(page.locator('#card-form [name="name"]')).toHaveValue('跨頁衝突的編輯草稿');expect(await stored()).toBe(third);
   await page.locator('[data-nav="workshop"]').click();await page.locator('[data-remove]').first().click();await expect(page.locator('#toast')).toContainText('存檔已在其他分頁更新');expect(await stored()).toBe(third);
   const damaged='{"version":1,"custom":[';await page.evaluate(raw=>localStorage.setItem('meme-clash-v1',raw),damaged);await page.reload();
   await expect(page.getByRole('heading',{name:'存檔無法讀取',exact:true})).toBeVisible();
@@ -296,13 +298,45 @@ test('refreshing a full web library preserves active and saved deck references a
   await page.getByLabel('已保存卡組',{exact:true}).selectOption('deck-web');await expect(page.locator('.deck-list')).toContainText('Web card 1');
 });
 
-test('custom card creation at the profile limit preserves all 1000 cards across reload',async({page})=>{
+test('custom card limit rejects creation but permits in-place edits without changing references',async({page})=>{
   const profile=freshProfile();profile.custom=Array.from({length:1000},(_,i)=>({id:`custom-limit-${i}`,name:`Limit card ${i}`,type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'',effects:[]}));
+  profile.deck=[profile.custom[0].id,'tape','imagination','stonks','handshake','reverse','safe','suit','fusion','tape'];profile.decks=[{id:'edit-saved',name:'保留參照',deck:[...profile.deck]}];
   await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);
   await page.goto('/');await page.locator('[data-nav="workshop"]').click();const stored=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
   await page.getByLabel('卡牌名稱',{exact:true}).fill('超額卡牌');await page.getByRole('button',{name:'鑄造卡牌',exact:true}).click();
   await expect(page.locator('#form-error')).toHaveText('最多保存 1000 張自訂卡牌');expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);
-  await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(page.locator('.small-count')).toHaveText('1000 張自訂卡牌');
+  await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');await page.locator('[data-card="custom-limit-0"]').click();await page.locator('[data-edit="custom-limit-0"]').click();
+  await expect(page.getByRole('heading',{name:'編輯卡牌',exact:true})).toBeVisible();await page.getByLabel('卡牌名稱',{exact:true}).fill('Updated original');await page.locator('#card-form [name="attack"]').fill('7');
+  await page.locator('[data-action="add-effect"]').click();await page.locator('[data-action="appearance"]').click();await page.locator('#interface-language').selectOption('en');await page.keyboard.press('Escape');
+  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:'.artifacts/card-edit-mobile.png',fullPage:true});
+  await page.evaluate(()=>{window.storageFails=true;const write=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){if(key==='meme-clash-v1'&&window.storageFails)throw new DOMException('Quota exceeded','QuotaExceededError');return write.call(this,key,value);};});
+  await page.locator('#card-form [type="submit"]').click();await expect(page.locator('#toast')).toContainText('Browser storage unavailable');expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);
+  await page.locator('[data-nav="collection"]').click();await page.locator('[data-nav="workshop"]').click();await expect(page.getByRole('heading',{name:'Edit card',exact:true})).toBeVisible();await expect(page.locator('#card-form [name="name"]')).toHaveValue('Updated original');
+  await page.evaluate(()=>window.storageFails=false);await page.locator('#card-form [type="submit"]').click();
+  const edited=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));expect(edited.custom).toHaveLength(1000);expect(edited.custom[0]).toMatchObject({id:'custom-limit-0',name:'Updated original',attack:7});expect(edited.custom[0].effects).toHaveLength(1);
+  expect(edited.deck).toEqual(profile.deck);expect(edited.decks).toEqual(profile.decks);expect(edited.custom.slice(1)).toEqual(parseProfile(profile).custom.slice(1));
+  await page.locator('[data-card="custom-limit-0"]').click();await page.locator('[data-edit="custom-limit-0"]').click();await page.locator('[data-action="cancel-edit"]').click();await expect(page.locator('#card-form [name="name"]')).toHaveValue('');await expect(page.getByRole('heading',{name:'Create a card',exact:true})).toBeVisible();
+  await page.locator('[data-nav="collection"]').click();await page.locator('[data-card="custom-limit-0"]').click();await page.locator('[data-edit="custom-limit-0"]').click();
+  await page.locator('[data-nav="collection"]').click();await page.locator('[data-card="custom-limit-0"]').click();await page.locator('[data-template="custom-limit-0"]').click();
+  await expect(page.getByRole('heading',{name:'Create a card',exact:true})).toBeVisible();await expect(page.locator('[data-action="cancel-edit"]')).toHaveCount(0);await page.locator('#card-form [type="submit"]').click();await expect(page.locator('#form-error')).toContainText('1000');
+  await page.locator('[data-nav="battle"]').click();await expect(page.locator('.own-formation .board-unit-name')).toHaveText('Limit card 0');
+  await page.locator('[data-action="new"]').click();await page.locator('#match-form [type="submit"]').click();await expect(page.locator('.own-formation .board-unit-name')).toHaveText('Updated original');
+  await page.locator('[data-nav="collection"]').click();await page.locator('[data-card="custom-limit-0"]').click();await page.locator('[data-edit="custom-limit-0"]').click();await page.locator('#card-form [name="type"]').selectOption('trap');await page.locator('#card-form [type="submit"]').click();
+  const changedType=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));expect(changedType.custom[0]).toMatchObject({id:'custom-limit-0',type:'trap'});expect(changedType.custom[0].effects[0].trigger).toBe('hit');expect(changedType.deck).toEqual(profile.deck);expect(changedType.decks).toEqual(profile.decks);
+  await page.locator('[data-nav="battle"]').click();await expect(page.locator('.own-formation .board-unit-name')).toHaveText('Updated original');await page.locator('[data-action="new"]').click();await page.locator('#match-form [type="submit"]').click();await expect(page.locator('#match-error')).toContainText('10');await expect(page.locator('.own-formation .board-unit-name')).toHaveText('Updated original');await page.keyboard.press('Escape');
+  await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(page.locator('.small-count')).toHaveText('1000 custom cards');
+});
+
+test('deleting an edited card preserves its draft but never restores the deleted ID',async({page})=>{
+  const profile=freshProfile();profile.custom=[{id:'custom-edit-delete',name:'編輯刪除測試',type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'',effects:[]}];
+  await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);
+  await page.goto('/');await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');await page.locator('[data-card="custom-edit-delete"]').click();await page.locator('[data-edit="custom-edit-delete"]').click();
+  await page.locator('#card-form [name="name"]').fill('保留未保存草稿');await page.locator('[data-nav="collection"]').click();await page.locator('[data-card="custom-edit-delete"]').click();await page.locator('[data-delete="custom-edit-delete"]').click();await page.locator('#confirm-delete').click();
+  await page.locator('[data-nav="workshop"]').click();await expect(page.getByRole('heading',{name:'創作卡牌',exact:true})).toBeVisible();await expect(page.locator('#card-form [name="name"]')).toHaveValue('保留未保存草稿');
+  await page.locator('#card-form [type="submit"]').click();const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));expect(saved.custom).toHaveLength(1);expect(saved.custom[0].id).not.toBe('custom-edit-delete');expect(saved.custom[0].name).toBe('保留未保存草稿');
+  await page.locator(`[data-card="${saved.custom[0].id}"]`).click();await page.locator(`[data-edit="${saved.custom[0].id}"]`).click();await page.locator('#card-form [name="name"]').fill('匯入後保留草稿');
+  const chooser=page.waitForEvent('filechooser');await page.locator('[data-action="import"]').click();await (await chooser).setFiles({name:'replacement.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(freshProfile()))});await page.locator('#confirm-import').click();
+  await expect(page.getByRole('heading',{name:'創作卡牌',exact:true})).toBeVisible();await expect(page.locator('#card-form [name="name"]')).toHaveValue('匯入後保留草稿');await page.locator('#card-form [type="submit"]').click();const imported=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));expect(imported.custom).toHaveLength(1);expect(imported.custom[0].id).not.toBe(saved.custom[0].id);
 });
 
 test('deleting a custom card removes it from every saved deck while preserving draft names',async({page})=>{
