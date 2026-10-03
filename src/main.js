@@ -547,10 +547,15 @@ document.addEventListener('click', e => {
     case 'remove-effect': button.closest('.effect-row').remove();formBase=readCardForm($('#card-form'));storeCardDraft();break;
   }
 });
+function updateSearch(input) {
+  const pos=input.selectionStart;query=input.value;visible=24;render();
+  const next=$('#search');next.focus();try {next.setSelectionRange(pos,pos);} catch {}
+}
+document.addEventListener('compositionend',e=>{if(e.target.id==='search')updateSearch(e.target);});
 document.addEventListener('input', e => {
   if(e.target.closest('#card-form')){formBase=readCardForm(e.target.form);storeCardDraft();}
   if(e.target.id==='deck-name')deckName=e.target.value;
-  if(e.target.id==='search') { const pos=e.target.selectionStart; query=e.target.value; visible=24; render(); const input=$('#search'); input.focus(); try {input.setSelectionRange(pos,pos);} catch {} }
+  if(e.target.id==='search'&&!e.isComposing)updateSearch(e.target);
 });
 document.addEventListener('change', e=>{
   if(e.target.id==='saved-deck') {

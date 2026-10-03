@@ -313,6 +313,33 @@ test('deck-only updates reuse the catalog and empty searches skip per-card text 
   expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).web.length)).toBe(1000);
 });
 
+test('catalog search keeps the composing input until commit or cancellation',async({page})=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  const profile=freshProfile();profile.custom=['中文迷因','日本語ミーム'].map((name,i)=>({id:`custom-ime-${i}`,name,type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'',effects:[]}));
+  await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),profile);await page.goto('/');
+  await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');
+  const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1')),search=page.getByRole('searchbox',{name:'搜尋卡牌'}),cards=page.locator('.catalog-grid .meme-card');
+  for(const width of [1440,390]){
+    await page.setViewportSize({width,height:844});await search.fill('');await expect(cards).toHaveCount(2);
+    const composing=await search.evaluate(input=>{
+      input.focus();input.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true}));
+      for(const value of ['ㄓ','中文']){input.value=value;input.dispatchEvent(new InputEvent('input',{bubbles:true,isComposing:true,inputType:'insertCompositionText',data:value}));}
+      return {connected:input.isConnected,focused:document.activeElement===input};
+    });
+    expect(composing).toEqual({connected:true,focused:true});await expect(cards).toHaveCount(2);
+    await search.evaluate(input=>{input.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'中文'}));input.dispatchEvent(new InputEvent('input',{bubbles:true,isComposing:false}));});
+    await expect(search).toHaveValue('中文');await expect(search).toBeFocused();await expect(cards).toHaveCount(1);await expect(cards).toContainText('中文迷因');
+    const cancelled=await search.evaluate(input=>{
+      input.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true}));input.value='取消候選';input.dispatchEvent(new InputEvent('input',{bubbles:true,isComposing:true}));
+      const connected=input.isConnected;input.value='中文';input.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:''}));return connected;
+    });
+    expect(cancelled).toBe(true);await expect(search).toHaveValue('中文');await expect(cards).toHaveCount(1);
+    await search.fill('日本語');await expect(cards).toHaveCount(1);await expect(cards).toContainText('日本語ミーム');
+  }
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+  expect(errors).toEqual([]);
+});
+
 test('collection sorts every matching card before pagination without changing saved cards',async({page})=>{
   const profile=freshProfile();profile.custom=Array.from({length:26},(_,i)=>({id:`custom-sort-${i}`,name:i===0?'Sort 10':i===1?'Sort 2':`Z ${i}`,type:'monster',tag:'bonk',cost:i===25?0:1,attack:i,hp:i+10,speed:5,image:'',flavor:'',effects:[]}));
   await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),profile);
