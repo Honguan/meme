@@ -172,7 +172,8 @@ export async function matchRequest(request, db, now = Date.now()) {
     }
     let row = await stmt(db, 'SELECT * FROM matches WHERE id = ?', ticket.match_id).first();
     if (!row || row.expires < now) {
-      await stmt(db, 'DELETE FROM match_tickets WHERE id = ?', id).run();
+      const removed = await stmt(db, 'DELETE FROM match_tickets WHERE id = ? AND match_id = ?', id, ticket.match_id).run();
+      if (!removed.meta.changes) fail('對局已更新，請重試', 409);
       return json({ status: 'idle' });
     }
     const side = row.peer0 === id ? 0 : row.peer1 === id ? 1 : fail('無法進入此對局', 403);

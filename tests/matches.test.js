@@ -40,6 +40,34 @@ async function call(db, key, action='state', data={}, now=100000) {
   return { status: response.status, ...await response.json() };
 }
 
+test('stale missing or expired room cleanup cannot delete a replacement match ticket',async()=>{
+  for(const missing of [false,true]){
+    const db=database(),key=token(),oldPeer=token(),newPeer=token();let resume,pending;
+    try {
+      await call(db,key,'join',payload());const old=await call(db,oldPeer,'join',payload());assert.equal(old.status,'matched');
+      if(missing)db.sql.prepare('DELETE FROM matches WHERE id = ?').run(old.id);
+      const now=100000+7200001;let selected,paused=false;
+      const selection=new Promise(resolve=>selected=resolve),continued=new Promise(resolve=>resume=resolve),prepare=db.prepare;
+      db.prepare=query=>{
+        const statement=prepare(query);if(query!=='SELECT * FROM matches WHERE id = ?')return statement;
+        return {bind(...args){const bound=statement.bind(...args),first=bound.first;
+          bound.first=async()=>{const row=await first();if(!paused){paused=true;selected();await continued;}return row;};return bound;
+        }};
+      };
+      pending=call(db,key,'state',{},now);await selection;
+      assert.equal((await call(db,key,'leave',{},now+1)).status,'idle');
+      assert.equal((await call(db,key,'join',payload(),now+2)).status,'waiting');
+      const replacement=await call(db,newPeer,'join',payload(),now+3);assert.equal(replacement.status,'matched');assert.notEqual(replacement.id,old.id);
+      const tickets=db.sql.prepare('SELECT id,match_id FROM match_tickets ORDER BY id').all(),rooms=db.sql.prepare('SELECT * FROM matches ORDER BY id').all();
+      resume();const stale=await pending;
+      assert.deepEqual(db.sql.prepare('SELECT id,match_id FROM match_tickets ORDER BY id').all(),tickets);assert.deepEqual(db.sql.prepare('SELECT * FROM matches ORDER BY id').all(),rooms);
+      assert.equal(stale.status,409);assert.match(stale.error,/對局已更新/);
+      const current=await call(db,key,'state',{},now+4);assert.equal(current.status,'matched');assert.equal(current.id,replacement.id);assert.equal(current.game.phase,'plan');
+      db.sql.prepare('DELETE FROM matches WHERE id = ?').run(current.id);assert.equal((await call(db,key,'state',{},now+5)).status,'idle');
+    } finally {resume?.();await pending;db.sql.close();}
+  }
+});
+
 test('simultaneous queue joins assign every player to exactly one two-player match',async()=>{
   const db=database(),keys=Array.from({length:8},token);
   try {
