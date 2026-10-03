@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { freshProfile } from '../src/storage.js';
+import { freshProfile, parseProfile } from '../src/storage.js';
 import { CATALOG } from '../src/catalog.js';
 
 test('deck-only updates reuse the derived catalog instead of cloning every web template',async({page})=>{
@@ -54,6 +54,34 @@ test('saved deck workshop saves, switches, overwrites, reloads, exports and dele
   const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'匯入',exact:true}).click();
   await (await chooser).setFiles({name:'decks.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(exported))});
   await page.locator('#confirm-import').click();expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).decks)).toEqual(exported.decks);
+});
+
+test('large exported backups restore every custom card and oversized imports preserve the current profile',async({page})=>{
+  const profile=freshProfile();
+  profile.custom=Array.from({length:1000},(_,i)=>({id:`custom-backup-${i}`,name:`Backup ${i}`,type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:`https://example.com/${'x'.repeat(1980)}`,flavor:'x'.repeat(160),effects:[]}));
+  profile.deck[0]=profile.custom[0].id;profile.decks=[{id:'backup-deck',name:'Backup deck',deck:[...profile.deck]}];
+  const original=parseProfile(profile);
+  await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},original);
+  await page.route('https://example.com/**',route=>route.abort());
+  await page.goto('/');await page.locator('[data-nav="workshop"]').click();
+  const download=page.waitForEvent('download');await page.getByRole('button',{name:'匯出',exact:true}).click();
+  const stream=await (await download).createReadStream(),chunks=[];for await(const chunk of stream)chunks.push(chunk);
+  const backup=Buffer.concat(chunks);expect(backup.length).toBeGreaterThan(2_000_000);expect(backup.length).toBeLessThan(10_000_000);
+  const upload=async buffer=>{
+    const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'匯入',exact:true}).click();
+    await (await chooser).setFiles({name:'backup.json',mimeType:'application/json',buffer});
+  };
+  await upload(Buffer.from(JSON.stringify(freshProfile())));await page.locator('#confirm-import').click();
+  await expect(page.locator('.small-count')).toHaveText('0 張自訂卡牌');
+  await upload(backup);await expect(page.locator('#confirm-import')).toBeVisible();
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).custom.length)).toBe(0);
+  await page.locator('#confirm-import').click();await expect(page.locator('.small-count')).toHaveText('1000 張自訂卡牌');
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')))).toEqual(original);
+  await upload(Buffer.concat([Buffer.from(JSON.stringify(freshProfile())),Buffer.alloc(10_000_001,32)]));
+  await expect(page.locator('#toast')).toContainText('匯入檔案不得超過 10 MB');await expect(page.locator('dialog')).toBeHidden();
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')))).toEqual(original);
+  await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(page.locator('.small-count')).toHaveText('1000 張自訂卡牌');
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')))).toEqual(original);
 });
 
 test('saved deck and import quota failures preserve stored and live data until successful retry',async({page})=>{

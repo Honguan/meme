@@ -328,7 +328,7 @@ function importProfile() {
   input.onchange = async () => {
     const file = input.files[0]; if (!file) return;
     try {
-      if (file.size > 2_000_000) throw new Error('匯入檔案不得超過 2 MB');
+      if (file.size > 10_000_000) throw new Error('匯入檔案不得超過 10 MB');
       const incoming = parseProfile(JSON.parse(await file.text()));
       openDialog(`<div class="dialog-heading"><h2>匯入卡組</h2><p>${incoming.deck.length} 張卡組卡牌、${incoming.custom.length} 張自訂卡牌、${incoming.decks.length} 組已保存卡組。匯入後取代目前卡組、已保存卡組與自訂卡庫。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-import">${icon('upload')} 確認匯入</button></div>`, 'small-modal');
       $('#confirm-import').onclick = () => { if (!persist({ ...incoming, stats: profile.stats })) return; savedDeckId='';deckName='';modal.close();render();toast('卡組已匯入'); };
