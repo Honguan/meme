@@ -155,6 +155,12 @@ const rows = `
 卡牌來源|Card source|カードの出典|Origen de la carta
 全部|All|すべて|Todas
 所有來源|All sources|すべての出典|Todos los orígenes
+卡牌排序|Card order|カードの並び順|Orden de cartas
+原始順序|Original order|元の順序|Orden original
+名稱順序|Name order|名前順|Por nombre
+能量低至高|Energy: low to high|エネルギー：低い順|Energía: menor a mayor
+攻擊力高至低|Attack: high to low|攻撃力：高い順|Ataque: mayor a menor
+生命值高至低|HP: high to low|HP：高い順|Vida: mayor a menor
 精選|Curated|厳選|Selección
 網路|Web|ネット|Web
 全球|Global|世界|Global

@@ -169,6 +169,24 @@ test('deck-only updates reuse the catalog and empty searches skip per-card text 
   expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).web.length)).toBe(1000);
 });
 
+test('collection sorts every matching card before pagination without changing saved cards',async({page})=>{
+  const profile=freshProfile();profile.custom=Array.from({length:26},(_,i)=>({id:`custom-sort-${i}`,name:i===0?'Sort 10':i===1?'Sort 2':`Z ${i}`,type:'monster',tag:'bonk',cost:i===25?0:1,attack:i,hp:i+10,speed:5,image:'',flavor:'',effects:[]}));
+  await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),profile);
+  await page.goto('/');await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');
+  const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1')),cards=page.locator('.catalog-grid [data-card]'),order=page.getByRole('combobox',{name:'卡牌排序',exact:true});
+  await expect(cards).toHaveCount(24);await expect(cards.first()).toHaveAttribute('data-card','custom-sort-0');
+  await page.locator('[data-action="more"]').click();await expect(cards).toHaveCount(26);
+  for(const mode of ['cost','attack','hp']) {await order.selectOption(mode);await expect(cards).toHaveCount(24);await expect(cards.first()).toHaveAttribute('data-card','custom-sort-25');}
+  await order.selectOption('name');await expect(cards.nth(0)).toHaveAttribute('data-card','custom-sort-1');await expect(cards.nth(1)).toHaveAttribute('data-card','custom-sort-0');
+  await page.getByRole('searchbox',{name:'搜尋卡牌'}).fill('Sort');await expect(cards).toHaveCount(2);await expect(cards.first()).toHaveAttribute('data-card','custom-sort-1');
+  await page.locator('[data-nav="workshop"]').click();await page.locator('[data-nav="collection"]').click();await expect(order).toHaveValue('name');await expect(cards).toHaveCount(2);
+  await page.locator('[data-action="appearance"]').click();await page.locator('#interface-language').selectOption('en');await page.keyboard.press('Escape');await expect(page.getByRole('combobox',{name:'Card order',exact:true})).toHaveValue('name');
+  await expect(page.locator('#sort-order option[value="cost"]')).toHaveText('Energy: low to high');await expect(cards.first()).toContainText('Sort 2');
+  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:'.artifacts/card-sort-mobile.png',fullPage:true});
+  await page.getByRole('searchbox',{name:'Search cards'}).fill('');await page.locator('#sort-order').selectOption('catalog');await expect(cards.first()).toHaveAttribute('data-card','custom-sort-0');
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+});
+
 test('saved deck workshop saves, switches, overwrites, reloads, exports and deletes independently',async({page})=>{
   await page.goto('/');await page.locator('[data-nav="workshop"]').click();
   await page.getByLabel('卡組名稱',{exact:true}).fill('魔法工坊');await page.getByRole('button',{name:'保存卡組',exact:true}).click();

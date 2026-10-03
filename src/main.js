@@ -39,7 +39,7 @@ let previewTimer, hoverCard, stopHoverPreview, stopModalPreview;
 const hoverPreview = document.createElement('aside');
 hoverPreview.className = 'hover-preview'; hoverPreview.hidden = true; hoverPreview.id = 'card-effect-preview';
 hoverPreview.setAttribute('role','tooltip'); document.body.append(hoverPreview);
-let sourceLanguage = 'all', sourceCountry = 'all', ability = 'all';
+let sourceLanguage = 'all', sourceCountry = 'all', ability = 'all', sortOrder = 'catalog';
 const languageNames = { ara:'العربية', ben:'বাংলা', deu:'Deutsch', eng:'English', fra:'Français', hin:'हिन्दी', jpn:'日本語', kor:'한국어', por:'Português', rus:'Русский', spa:'Español', tam:'தமிழ்', urd:'اردو', vie:'Tiếng Việt', zho:'中文' };
 let regionNames = new Intl.DisplayNames([getLocale()], { type: 'region' });
 const app = $('#app'), modal = $('#modal');
@@ -200,10 +200,13 @@ function inspectorHTML() {
 function collectionHTML() {
   const search=query.toLowerCase();
   const filtered = catalog.filter(c => (filter === 'all' || c.type === filter) && (origin === 'all' || c.origin === origin) && (sourceLanguage === 'all' || (sourceLanguage === 'unknown' ? !c.languages?.length : c.languages?.includes(sourceLanguage))) && (sourceCountry === 'all' || c.countries?.includes(sourceCountry)) && (ability === 'all' || c.archetype === ability) && (!search || `${c.name} ${TAGS[c.tag].name} ${TAGS[c.tag].set} ${c.flavor} ${ARCHETYPES[c.archetype]?.name || ''} ${tr(TAGS[c.tag].name)} ${tr(TAGS[c.tag].set)} ${tr(ARCHETYPES[c.archetype]?.name || '')} ${effectText(c)}`.toLowerCase().includes(search)));
+  if(sortOrder==='name')filtered.sort((a,b)=>a.name.localeCompare(b.name,getLocale(),{numeric:true}));
+  else if(sortOrder==='cost')filtered.sort((a,b)=>a.cost-b.cost);
+  else if(sortOrder==='attack'||sortOrder==='hp')filtered.sort((a,b)=>b[sortOrder]-a[sortOrder]);
   return `<main class="collection-page"><div class="page-heading"><h1>卡牌圖鑑</h1><button class="quiet-button" data-action="refresh">${icon('refresh-cw')} 更新網路卡庫</button></div>
     <div class="collection-toolbar"><label class="search-box">${icon('search')}<input id="search" type="search" placeholder="搜尋迷因、陣營或效果" aria-label="搜尋卡牌" value="${esc(query)}"></label><div class="filter-tabs" role="group" aria-label="卡牌類型">${[['all','全部'],...Object.entries(TYPES)].map(([id,label])=>`<button data-filter="${id}" class="${filter===id?'active':''}" aria-pressed="${filter===id}">${label}</button>`).join('')}</div><select id="origin-filter" aria-label="卡牌來源">${['all','精選','網路','全球','自訂'].map(o=>`<option value="${o}" ${origin===o?'selected':''}>${o==='all'?'所有來源':o}</option>`).join('')}</select></div>
     <div class="world-filters"><span>${WORLD_COVERAGE.count.toLocaleString()} 全球模板 · ${Object.keys(WORLD_COVERAGE.languages).length} 種來源語言 · ${Object.keys(WORLD_COVERAGE.countries).length} 個來源地區</span><label>來源語言<select id="language-filter"><option value="all">所有語言</option>${Object.keys(WORLD_COVERAGE.languages).map(code=>`<option value="${code}" ${sourceLanguage===code?'selected':''}>${languageNames[code] || code}</option>`).join('')}<option value="unknown" ${sourceLanguage==='unknown'?'selected':''}>未標註</option></select></label><label>來源地區<select id="country-filter"><option value="all">所有地區</option>${Object.keys(WORLD_COVERAGE.countries).map(code=>`<option value="${code}" ${sourceCountry===code?'selected':''}>${regionNames.of(code)}</option>`).join('')}</select></label><label>梗意能力<select id="ability-filter"><option value="all">所有能力</option>${Object.entries(ARCHETYPES).map(([id,a])=>`<option value="${id}" ${ability===id?'selected':''}>${a.name}</option>`).join('')}</select></label></div>
-    <div class="collection-layout"><section><div class="results-heading"><span>${filtered.length} 張卡牌</span></div><div class="catalog-grid">${filtered.slice(0,visible).map(c=>cardHTML(c)).join('') || '<div class="empty-state">沒有符合條件的卡牌。</div>'}</div>${filtered.length>visible?`<button class="quiet-button load-more" data-action="more">載入更多 ${icon('plus')}</button>`:''}</section>${deckSidebar()}</div></main>`;
+    <div class="collection-layout"><section><div class="results-heading"><span>${filtered.length} 張卡牌</span><select id="sort-order" aria-label="卡牌排序">${[['catalog','原始順序'],['name','名稱順序'],['cost','能量低至高'],['attack','攻擊力高至低'],['hp','生命值高至低']].map(([id,label])=>`<option value="${id}" ${sortOrder===id?'selected':''}>${label}</option>`).join('')}</select></div><div class="catalog-grid">${filtered.slice(0,visible).map(c=>cardHTML(c)).join('') || '<div class="empty-state">沒有符合條件的卡牌。</div>'}</div>${filtered.length>visible?`<button class="quiet-button load-more" data-action="more">載入更多 ${icon('plus')}</button>`:''}</section>${deckSidebar()}</div></main>`;
 }
 function deckSidebar() {
   const count = new Map(); profile.deck.forEach(id=>count.set(id,(count.get(id)||0)+1));
@@ -535,6 +538,7 @@ document.addEventListener('change', e=>{
   if(e.target.id==='language-filter') {sourceLanguage=e.target.value;visible=24;render();}
   if(e.target.id==='country-filter') {sourceCountry=e.target.value;visible=24;render();}
   if(e.target.id==='ability-filter') {ability=e.target.value;visible=24;render();}
+  if(e.target.id==='sort-order') {sortOrder=e.target.value;visible=24;render();}
   if(e.target.name==='type') {syncTriggers();localize($('#effect-rows'));}
   if(e.target.closest('#card-form'))formBase=readCardForm(e.target.form);
 });
