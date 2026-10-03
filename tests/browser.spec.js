@@ -1,6 +1,74 @@
 import { test, expect } from '@playwright/test';
 import { freshProfile, parseProfile } from '../src/storage.js';
 import { CATALOG } from '../src/catalog.js';
+import { DRAFT_KEY } from '../src/draft.js';
+
+test('card drafts restore blank values and zero effects after reload without touching profiles',async({page,context})=>{
+  await page.goto('/');const stored=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  await page.locator('[data-nav="workshop"]').click();
+  const form=()=>page.locator('#card-form');
+  await form().locator('[name="name"]').fill('重新整理草稿');await form().locator('[name="flavor"]').fill('未完成 "輸入"');
+  await form().locator('[name="hp"]').fill('');await form().locator('[name="amount"]').fill('');
+  for(let i=0;i<3;i++)await page.locator('[data-action="add-effect"]').click();
+  await page.reload();await page.locator('[data-nav="workshop"]').click();
+  await expect(form().locator('[name="name"]')).toHaveValue('重新整理草稿');await expect(form().locator('[name="flavor"]')).toHaveValue('未完成 "輸入"');
+  await expect(form().locator('[name="hp"]')).toHaveValue('');await expect(form().locator('[name="amount"]').first()).toHaveValue('');await expect(form().locator('.effect-row')).toHaveCount(4);
+  const other=await context.newPage();await other.goto('/');await other.locator('[data-nav="workshop"]').click();await expect(other.locator('#card-form [name="name"]')).toHaveValue('');await other.close();
+  for(let i=0;i<4;i++)await page.locator('[data-action="remove-effect"]').first().click();
+  await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(form().locator('.effect-row')).toHaveCount(0);
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);
+  await form().locator('[name="hp"]').fill('17');await form().locator('[type="submit"]').click();
+  expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBeNull();
+  await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(form().locator('[name="name"]')).toHaveValue('');
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).custom[0].effects)).toEqual([]);
+});
+
+test('edit drafts restore only unchanged source cards and never overwrite changed sources',async({page})=>{
+  const profile=freshProfile(),original={id:'custom-reload-edit',name:'原始角色',type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'原始宣言',effects:[]};profile.custom=[original];
+  await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);
+  const form=()=>page.locator('#card-form');
+  const edit=async()=>{await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');await page.locator(`[data-card="${original.id}"]`).click();await page.locator(`[data-edit="${original.id}"]`).click();};
+  await page.goto('/');await edit();const stored=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  await form().locator('[name="name"]').fill('保留編輯');await form().locator('[name="hp"]').fill('');
+  await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(page.getByRole('heading',{name:'編輯卡牌',exact:true})).toBeVisible();
+  await expect(form().locator('[name="name"]')).toHaveValue('保留編輯');await expect(form().locator('[name="hp"]')).toHaveValue('');expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);
+  await form().locator('[name="hp"]').fill('24');await form().locator('[type="submit"]').click();
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).custom.map(c=>c.id))).toEqual([original.id]);expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBeNull();
+  await edit();await form().locator('[name="name"]').fill('取消內容');await page.locator('[data-action="cancel-edit"]').click();
+  await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(form().locator('[name="name"]')).toHaveValue('');expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBeNull();
+  await edit();await form().locator('[name="name"]').fill('匯入前草稿');
+  const incoming=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));incoming.custom[0].name='匯入的新版本';
+  const chooser=page.waitForEvent('filechooser');await page.locator('[data-action="import"]').click();await (await chooser).setFiles({name:'changed-source.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(incoming))});await page.locator('#confirm-import').click();
+  await expect(page.getByRole('heading',{name:'編輯卡牌',exact:true})).toHaveCount(0);await expect(form().locator('[name="name"]')).toHaveValue('匯入前草稿');
+  await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(form().locator('[name="name"]')).toHaveValue('匯入前草稿');await expect(page.getByRole('heading',{name:'編輯卡牌',exact:true})).toHaveCount(0);
+  for(const remove of [false,true]){
+    await edit();await form().locator('[name="name"]').fill(remove?'來源刪除草稿':'來源更新草稿');
+    await page.evaluate(remove=>{const p=JSON.parse(localStorage.getItem('meme-clash-v1'));if(remove)p.custom=p.custom.filter(c=>c.id!=='custom-reload-edit');else p.custom.find(c=>c.id==='custom-reload-edit').name='外部新版';localStorage.setItem('meme-clash-v1',JSON.stringify(p));},remove);
+    await page.reload();await expect(page.locator('#toast')).toContainText('原卡牌已變更');await page.locator('[data-nav="workshop"]').click();
+    await expect(page.getByRole('heading',{name:'編輯卡牌',exact:true})).toHaveCount(0);await expect(form().locator('[name="name"]')).toHaveValue(remove?'來源刪除草稿':'來源更新草稿');
+    await form().locator('[type="submit"]').click();const custom=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).custom);
+    expect(custom.at(-1).id).not.toBe(original.id);if(!remove)expect(custom.find(c=>c.id===original.id).name).toBe('外部新版');else expect(custom.some(c=>c.id===original.id)).toBeFalsy();
+  }
+});
+
+test('draft storage failures preserve editor memory and malformed drafts remain harmless',async({page})=>{
+  await page.goto('/');const stored=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));await page.locator('[data-nav="workshop"]').click();
+  await page.evaluate(key=>{window.draftFails=true;const set=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(k===key&&window.draftFails)throw new Error('quota');return set.call(this,k,v);};},DRAFT_KEY);
+  await page.locator('#card-form [name="name"]').fill('記憶體草稿');await expect(page.locator('#toast')).toContainText('無法暫存草稿');
+  await page.locator('[data-nav="collection"]').click();await page.locator('[data-nav="workshop"]').click();await expect(page.locator('#card-form [name="name"]')).toHaveValue('記憶體草稿');
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);
+  await page.evaluate(()=>window.draftFails=false);await page.locator('#card-form [name="name"]').fill('再次暫存');await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(page.locator('#card-form [name="name"]')).toHaveValue('再次暫存');
+  await page.locator('#card-form [type="submit"]').click();const id=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).custom[0].id);
+  await page.locator(`[data-card="${id}"]`).click();await page.locator(`[data-edit="${id}"]`).click();
+  await page.evaluate(key=>{const set=Storage.prototype.setItem,remove=Storage.prototype.removeItem;Storage.prototype.setItem=function(k,v){if(k===key)throw new Error('quota');return set.call(this,k,v);};Storage.prototype.removeItem=function(k){if(k===key)throw new Error('denied');return remove.call(this,k);};},DRAFT_KEY);
+  await page.locator('#card-form [name="name"]').fill('取消失敗的編輯');await expect(page.locator('#toast')).toContainText('無法暫存草稿');await page.locator('[data-action="cancel-edit"]').click();await expect(page.locator('#toast')).toContainText('無法清除暫存草稿');
+  await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(page.getByRole('heading',{name:'編輯卡牌',exact:true})).toBeVisible();await expect(page.locator('#card-form [name="name"]')).toHaveValue('再次暫存');
+  await page.locator('[data-action="cancel-edit"]').click();await page.locator('#card-form [name="name"]').fill('不可信輸入');
+  await page.evaluate(key=>{const draft=JSON.parse(sessionStorage.getItem(key));draft.card.cost=draft.card.speed=draft.card.attack=draft.card.hp=draft.card.effects[0].amount='" onfocus="window.injected=1';sessionStorage.setItem(key,JSON.stringify(draft));},DRAFT_KEY);
+  await page.reload();await page.locator('[data-nav="workshop"]').click();expect(await page.locator('#card-form [onfocus]').count()).toBe(0);expect(await page.evaluate(()=>window.injected)).toBeUndefined();
+  await page.evaluate(key=>sessionStorage.setItem(key,'{broken'),DRAFT_KEY);await page.reload();await expect(page.locator('#toast')).toContainText('無法讀取暫存草稿');await page.locator('[data-nav="workshop"]').click();await expect(page.locator('#card-form [name="name"]')).toHaveValue('');
+  expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBe('{broken');
+});
 
 test('card sources keep imported library details fresh and active battle previews unchanged',async({page})=>{
   const profile=freshProfile(),original={id:'custom-source-test',name:'當局舊卡',type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'原始效果',effects:[{trigger:'hit',action:'shield',target:'self',amount:3}]};

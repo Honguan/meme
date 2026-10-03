@@ -216,6 +216,12 @@ const rows = `
 取消編輯|Cancel editing|編集をキャンセル|Cancelar edición
 儲存修改|Save changes|変更を保存|Guardar cambios
 卡牌已保存|Card saved|カードを保存しました|Carta guardada
+無法暫存草稿，重新整理可能遺失|Unable to store draft; reloading may lose it|下書きを保存できません。再読み込みすると失われる可能性があります|No se pudo guardar el borrador; puede perderse al recargar
+無法清除暫存草稿，重新整理可能再次出現|Unable to clear draft; reloading may restore it|下書きを削除できません。再読み込みすると再表示される可能性があります|No se pudo borrar el borrador; puede reaparecer al recargar
+卡牌已保存，但無法清除暫存草稿|Card saved, but stored draft could not be cleared|カードは保存されましたが、下書きを削除できませんでした|Carta guardada, pero no se pudo borrar el borrador
+無法讀取暫存草稿，原始資料已保留|Unable to read draft; original data preserved|下書きを読み込めません。元のデータは保持されています|No se pudo leer el borrador; datos originales conservados
+原卡牌已變更，草稿改為製作新卡|Source card changed; draft is now a new card|元のカードが変更されたため、下書きを新規カードに切り替えました|La carta original cambió; el borrador será una carta nueva
+已恢復卡牌草稿|Card draft restored|カードの下書きを復元しました|Borrador de carta restaurado
 關閉|Close|閉じる|Cerrar
 能量|Energy|エネルギー|Energía
 播放效果演示|Play effect preview|効果をプレビュー|Ver demostración

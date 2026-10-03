@@ -9,6 +9,7 @@ import { mountPreview } from './preview.js';
 import { THEMES, loadTheme, applyTheme } from './preferences.js';
 import { LANGUAGES, getLocale, setLocale, tr, localize } from './i18n.js';
 import { loadProfile, saveProfile, parseProfile } from './storage.js';
+import { loadDraft, saveDraft } from './draft.js';
 import './style.css';
 import './duel.css';
 
@@ -20,12 +21,13 @@ const icon = (name, cls = '') => `<i data-lucide="${name}" class="${cls}" aria-h
 const drawIcons = () => createIcons({ icons, attrs: { 'stroke-width': 1.8 } });
 const loaded = loadProfile();
 let profile = loaded.profile;
+const loadedDraft = loadDraft(profile.custom);
 let recoveryRaw = loaded.error ? loaded.raw ?? null : null;
 let persistedRaw = loaded.raw ?? null;
 let catalog = collect();
 let game = createGame({ catalog, deck: validDeck() });
 let screen = 'battle', arena, query = '', filter = 'all', origin = 'all', visible = 24, mute = true, audio, counted = false;
-let handoff = false, toastTimer, formBase = null, editingId = '';
+let handoff = false, toastTimer, formBase = loadedDraft.card, editingId = loadedDraft.editingId, editSource = loadedDraft.source, draftFailed = loadedDraft.error;
 let savedDeckId = '', deckName = '';
 let selected = null, dragging = false, cancelDrag;
 let online = null, onlineBusy = false, replaying = false, replayKey = '';
@@ -95,8 +97,16 @@ function persist(next = profile, replace = false) {
   try {
     const raw=saveProfile(next,persistedRaw);
     if(raw===null){toast('存檔已在其他分頁更新，請先匯出備份並重新載入');return false;}
-    persistedRaw=raw;recoveryRaw=null;const changed=next.custom!==profile.custom||next.web!==profile.web;profile=next;if(changed){catalog=collect();if(editingId&&!profile.custom.some(c=>c.id===editingId))editingId='';}return true;
+    persistedRaw=raw;recoveryRaw=null;const changed=next.custom!==profile.custom||next.web!==profile.web;profile=next;
+    if(changed){catalog=collect();if(editingId&&!profile.custom.some(c=>c.id===editingId&&JSON.stringify(c)===editSource)){editingId='';editSource='';storeCardDraft();}}
+    return true;
   } catch { toast('瀏覽器儲存空間不足，請匯出卡組備份'); return false; }
+}
+function storeCardDraft() {
+  const ok=saveDraft(formBase?{card:formBase,editingId,source:editSource}:null);
+  if(!ok&&!draftFailed)toast('無法暫存草稿，重新整理可能遺失');
+  draftFailed=!ok;
+  return ok;
 }
 function recoveryDialog() {
   openDialog(`<div class="dialog-heading"><h2>存檔無法讀取</h2><p>原始存檔已保留。覆寫後無法還原，請先下載原始存檔。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="export-recovery">${icon('download')} 下載原始存檔</button><button class="quiet-button" data-action="import">${icon('upload')} 匯入</button><button class="primary-button" id="confirm-reset-save">${icon('refresh-cw')} 覆寫為預設卡組</button></div>`, 'small-modal save-recovery');
@@ -213,7 +223,7 @@ function deckSidebar() {
   return `<aside class="deck-sidebar"><div class="aside-title"><h2>我的卡組</h2><b class="deck-count ${profile.deck.length<10?'warning':''}">${profile.deck.length}<small>/30</small></b></div>${savedControls}<div class="deck-list">${[...count].map(([id,n])=>{const c=catalog.find(c=>c.id===id);return c?`<div class="deck-row">${image(c)}<span><b>${esc(c.name)}</b><small>${TYPES[c.type]} · ${c.cost} 能量</small></span><b>×${n}</b><button class="icon-button small" data-remove="${esc(id)}" title="移除一張" aria-label="移除 ${esc(c.name)}">${icon('minus')}</button></div>`:'';}).join('')||'<p class="empty-state">尚未加入卡牌</p>'}</div><button class="primary-button" data-action="new">${icon('swords')} 使用卡組對決</button><div class="deck-tools"><button class="quiet-button" data-action="export">${icon('download')} 匯出</button><button class="quiet-button" data-action="import">${icon('upload')} 匯入</button></div></aside>`;
 }
 function effectRow(value = { trigger: 'play', action: 'shield', target: 'self', amount: 3 }) {
-  return `<div class="effect-row"><label>時機<select name="trigger">${Object.entries(TRIGGERS).map(([key,name])=>`<option value="${key}" ${key===value.trigger?'selected':''}>${name}</option>`).join('')}</select></label><label>效果<select name="action">${Object.entries(ACTIONS).map(([key,name])=>`<option value="${key}" ${key===value.action?'selected':''}>${name}</option>`).join('')}</select></label><label>對象<select name="target">${Object.entries(TARGETS).map(([key,name])=>`<option value="${key}" ${key===value.target?'selected':''}>${name}</option>`).join('')}</select></label><label>數值<input name="amount" type="number" min="1" max="99" value="${value.amount}" required></label><button class="icon-button" type="button" data-action="remove-effect" aria-label="移除此效果" title="移除此效果">${icon('x')}</button></div>`;
+  return `<div class="effect-row"><label>時機<select name="trigger">${Object.entries(TRIGGERS).map(([key,name])=>`<option value="${key}" ${key===value.trigger?'selected':''}>${name}</option>`).join('')}</select></label><label>效果<select name="action">${Object.entries(ACTIONS).map(([key,name])=>`<option value="${key}" ${key===value.action?'selected':''}>${name}</option>`).join('')}</select></label><label>對象<select name="target">${Object.entries(TARGETS).map(([key,name])=>`<option value="${key}" ${key===value.target?'selected':''}>${name}</option>`).join('')}</select></label><label>數值<input name="amount" type="number" min="1" max="99" value="${esc(value.amount)}" required></label><button class="icon-button" type="button" data-action="remove-effect" aria-label="移除此效果" title="移除此效果">${icon('x')}</button></div>`;
 }
 function readCardForm(form) {
   const data=Object.fromEntries(new FormData(form));
@@ -226,7 +236,7 @@ function workshopHTML() {
     <div class="workshop-layout"><section class="workshop-main"><div class="preset-band"><h2>卡組流派</h2><div class="preset-options">${Object.entries(PRESETS).map(([id,p],i)=>`<button data-preset="${id}" class="preset"><span class="preset-icon preset-${i}">${icon(i===0?'swords':i===1?'flame':'heart')}</span><span><b>${p.name}</b><small>${p.deck.length} 張卡牌</small></span>${icon('arrow-up-right')}</button>`).join('')}</div></div>
     <div class="extra-play"><button class="quiet-button" data-action="random-deck">${icon('refresh-cw')} 全球隨機套裝</button><button class="quiet-button" data-action="daily">${icon('trophy')} 每日挑戰</button></div>
     <form id="card-form"><div class="form-heading"><h2>${editingId?'編輯卡牌':'創作卡牌'}</h2><span>${editingId?'EDIT CARD':`NEW CARD / ${String(profile.custom.length+1).padStart(3,'0')}`}</span>${editingId?`<button class="icon-button" type="button" data-action="cancel-edit" aria-label="取消編輯" title="取消編輯">${icon('x')}</button>`:''}</div>
-    <div class="form-grid"><label class="wide">卡牌名稱<input name="name" maxlength="72" value="${esc(c.name)}" placeholder="卡牌名稱" required></label><label>類型<select name="type">${Object.entries(TYPES).map(([id,n])=>`<option value="${id}" ${c.type===id?'selected':''}>${n}</option>`).join('')}</select></label><label>陣營<select name="tag">${Object.entries(TAGS).map(([id,t])=>`<option value="${id}" ${c.tag===id?'selected':''}>${t.name}</option>`).join('')}</select></label><label>能量消耗<input name="cost" type="number" min="0" max="9" value="${c.cost}" required></label><label>碰撞速度<input name="speed" type="number" min="1" max="12" value="${c.speed}" required></label><label>攻擊力<input name="attack" type="number" min="0" max="99" value="${c.attack}" required></label><label>生命值<input name="hp" type="number" min="1" max="999" value="${typeof c.hp==='string'?esc(c.hp):Math.max(1,c.hp)}" required></label><label class="wide">圖片網址<input name="image" type="url" maxlength="2048" value="${esc(c.image)}" placeholder="https://…"></label><label class="wide">卡牌宣言<input name="flavor" maxlength="160" value="${esc(c.flavor)}" placeholder="台詞或備註"></label><label class="wide field-rule" ${c.type!=='field'?'hidden':''}>場地規則<select name="field">${FIELDS.map(f=>`<option value="${f.id}" ${c.field===f.id?'selected':''}>${f.name}：${f.description}</option>`).join('')}</select></label></div>
+    <div class="form-grid"><label class="wide">卡牌名稱<input name="name" maxlength="72" value="${esc(c.name)}" placeholder="卡牌名稱" required></label><label>類型<select name="type">${Object.entries(TYPES).map(([id,n])=>`<option value="${id}" ${c.type===id?'selected':''}>${n}</option>`).join('')}</select></label><label>陣營<select name="tag">${Object.entries(TAGS).map(([id,t])=>`<option value="${id}" ${c.tag===id?'selected':''}>${t.name}</option>`).join('')}</select></label><label>能量消耗<input name="cost" type="number" min="0" max="9" value="${esc(c.cost)}" required></label><label>碰撞速度<input name="speed" type="number" min="1" max="12" value="${esc(c.speed)}" required></label><label>攻擊力<input name="attack" type="number" min="0" max="99" value="${esc(c.attack)}" required></label><label>生命值<input name="hp" type="number" min="1" max="999" value="${typeof c.hp==='string'?esc(c.hp):Math.max(1,c.hp)}" required></label><label class="wide">圖片網址<input name="image" type="url" maxlength="2048" value="${esc(c.image)}" placeholder="https://…"></label><label class="wide">卡牌宣言<input name="flavor" maxlength="160" value="${esc(c.flavor)}" placeholder="台詞或備註"></label><label class="wide field-rule" ${c.type!=='field'?'hidden':''}>場地規則<select name="field">${FIELDS.map(f=>`<option value="${f.id}" ${c.field===f.id?'selected':''}>${f.name}：${f.description}</option>`).join('')}</select></label></div>
     <div class="form-heading effects-heading"><h3>效果連鎖</h3><button class="text-button" type="button" data-action="add-effect">${icon('plus')} 新增效果</button></div><div id="effect-rows">${c.effects.map(effectRow).join('')}</div><p class="form-error" id="form-error" role="alert"></p><button class="primary-button" type="submit">${icon(editingId?'save':'sparkles')} ${editingId?'儲存修改':'鑄造卡牌'}</button></form>
     </section>${deckSidebar()}</div></main>`;
 }
@@ -465,8 +475,8 @@ document.addEventListener('click', e => {
   if (button.dataset.add) return addToDeck(button.dataset.add);
   if (button.dataset.remove) { const at=profile.deck.indexOf(button.dataset.remove); if(at>=0&&persist({...profile,deck:profile.deck.filter((_,i)=>i!==at)}))render(); return; }
   if (button.dataset.filter) { filter=button.dataset.filter; visible=24; render(); return; }
-  if (button.dataset.edit) { const card=profile.custom.find(c=>c.id===button.dataset.edit);if(!card)return;editingId=card.id;formBase=structuredClone(card);modal.close();screen='workshop';render();return; }
-  if (button.dataset.template) { editingId='';formBase=structuredClone(catalog.find(c=>c.id===button.dataset.template)); modal.close(); screen='workshop'; render(); return; }
+  if (button.dataset.edit) { const card=profile.custom.find(c=>c.id===button.dataset.edit);if(!card)return;editingId=card.id;editSource=JSON.stringify(card);formBase=structuredClone(card);storeCardDraft();modal.close();screen='workshop';render();return; }
+  if (button.dataset.template) { editingId='';editSource='';formBase=structuredClone(catalog.find(c=>c.id===button.dataset.template));storeCardDraft(); modal.close(); screen='workshop'; render(); return; }
   if (button.dataset.preset) { if(!persist({...profile,deck:[...PRESETS[button.dataset.preset].deck]}))return;savedDeckId='';deckName='';render();toast('已套用預設卡組');return; }
   if (button.dataset.delete) {
     const id=button.dataset.delete;
@@ -510,13 +520,13 @@ document.addEventListener('click', e => {
     case 'recovery': recoveryDialog();break;
     case 'export-recovery': if(recoveryRaw!==null)exportProfile(recoveryRaw,'meme-clash-recovery.json');break;
     case 'import': importProfile();break;
-    case 'cancel-edit': editingId='';formBase=null;render();break;
-    case 'add-effect': if($('#effect-rows').children.length>=4) toast('最多 4 組效果');else {$('#effect-rows').insertAdjacentHTML('beforeend',effectRow());syncTriggers();formBase=readCardForm($('#card-form'));localize($('#effect-rows'));drawIcons();}break;
-    case 'remove-effect': button.closest('.effect-row').remove();formBase=readCardForm($('#card-form'));break;
+    case 'cancel-edit': editingId='';editSource='';formBase=null;if(!storeCardDraft())toast('無法清除暫存草稿，重新整理可能再次出現');render();break;
+    case 'add-effect': if($('#effect-rows').children.length>=4) toast('最多 4 組效果');else {$('#effect-rows').insertAdjacentHTML('beforeend',effectRow());syncTriggers();formBase=readCardForm($('#card-form'));storeCardDraft();localize($('#effect-rows'));drawIcons();}break;
+    case 'remove-effect': button.closest('.effect-row').remove();formBase=readCardForm($('#card-form'));storeCardDraft();break;
   }
 });
 document.addEventListener('input', e => {
-  if(e.target.closest('#card-form'))formBase=readCardForm(e.target.form);
+  if(e.target.closest('#card-form')){formBase=readCardForm(e.target.form);storeCardDraft();}
   if(e.target.id==='deck-name')deckName=e.target.value;
   if(e.target.id==='search') { const pos=e.target.selectionStart; query=e.target.value; visible=24; render(); const input=$('#search'); input.focus(); try {input.setSelectionRange(pos,pos);} catch {} }
 });
@@ -539,7 +549,7 @@ document.addEventListener('change', e=>{
   if(e.target.id==='ability-filter') {ability=e.target.value;visible=24;render();}
   if(e.target.id==='sort-order') {sortOrder=e.target.value;visible=24;render();}
   if(e.target.name==='type') {syncTriggers();localize($('#effect-rows'));}
-  if(e.target.closest('#card-form'))formBase=readCardForm(e.target.form);
+  if(e.target.closest('#card-form')){formBase=readCardForm(e.target.form);storeCardDraft();}
 });
 document.addEventListener('submit', e=>{
   if(e.target.id==='online-form') {
@@ -563,7 +573,7 @@ document.addEventListener('submit', e=>{
       const card=validateCustom(data);if(edited)card.id=editingId;
       const custom=edited?profile.custom.map(c=>c.id===editingId?card:c):[...profile.custom,card];
       if(!persist({...profile,custom}))return;
-      editingId='';formBase=null;screen='collection';origin='自訂';filter='all';sourceLanguage='all';sourceCountry='all';ability='all';query='';render();toast(edited?'卡牌已保存':`已鑄造「${card.name}」`);
+      editingId='';editSource='';formBase=null;const cleared=storeCardDraft();screen='collection';origin='自訂';filter='all';sourceLanguage='all';sourceCountry='all';ability='all';query='';render();toast(cleared?(edited?'卡牌已保存':`已鑄造「${card.name}」`):'卡牌已保存，但無法清除暫存草稿');
     } catch(error) {$('#form-error').textContent=tr(error.message);}
   }
 });
@@ -574,3 +584,6 @@ window.addEventListener('hashchange',()=>{if(location.hash==='#battle'&&game.pha
 render();
 if(network.token){online={status:'joining'};render();void network.send('state');}
 if(recoveryRaw!==null) recoveryDialog();else if(loaded.error) toast(loaded.error);
+else if(loadedDraft.error)toast('無法讀取暫存草稿，原始資料已保留');
+else if(loadedDraft.changed)toast('原卡牌已變更，草稿改為製作新卡');
+else if(formBase)toast('已恢復卡牌草稿');
