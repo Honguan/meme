@@ -740,8 +740,16 @@ test('dialogs use their current localized heading as an accessible name',async({
     await page.locator('[data-action="appearance"]').click();
     for(const locale of ['zh-Hant','en','ja','es']){
       await page.locator('#interface-language').selectOption(locale);await check();
+      await expect(page.locator('#interface-language')).toBeFocused();
     }
     await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.locator('[data-action="appearance"]')).toBeFocused();
+    await page.locator('[data-action="appearance"]').click();
+    const theme=width===1440?'coral':'ice';
+    await page.locator(`[name="theme"][value="${theme}"]`).check();
+    await expect(page.locator(`[name="theme"][value="${theme}"]`)).toBeFocused();
+    await page.locator('#modal [data-action="close"]').click();
+    await expect(page.locator('[data-action="appearance"]')).toBeFocused();
     await page.locator('[data-action="new"]').first().click();await check();
     await page.keyboard.press('Escape');
     await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');

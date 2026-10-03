@@ -412,7 +412,10 @@ window.addEventListener('scroll',()=>{
   if(target?.isConnected&&target.matches(':hover,:focus'))queueHoverPreview(target);
 },true);
 window.addEventListener('resize',hideHoverPreview);
-modal.addEventListener('close',()=>{stopModalPreview?.();stopModalPreview=null;$('#modal-preview-stage')?.replaceChildren();});
+modal.addEventListener('close',()=>{
+  stopModalPreview?.();stopModalPreview=null;$('#modal-preview-stage')?.replaceChildren();
+  if(!modal.open&&$('#interface-language',modal))$('[data-action="appearance"]')?.focus();
+});
 
 function selectPiece(button) {
   clearTimeout(toastTimer);$('#toast').classList.remove('show');
