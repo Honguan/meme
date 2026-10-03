@@ -325,6 +325,7 @@ function battleDone(advance = true) {
   if (game.phase === 'over') openDialog(`<div class="result-dialog">${icon('trophy')}<span class="eyebrow accent">MATCH COMPLETE</span><h2>${game.winner==='draw'?'勢均力敵':game.winner===0?'這局，你贏了！':game.mode==='local'?'玩家 02 獲勝':'這次，網路贏了'}</h2><p>${game.round} 回合 · ${game.collisions} 次碰撞</p><button class="primary-button" data-action="new">再來一局 ${icon('arrow-right')}</button></div>`, 'small-modal');
 }
 function addToDeck(id) {
+  if (!catalog.some(c=>c.id===id)) return toast('找不到卡牌');
   if (profile.deck.length>=30) return toast('卡組已滿：最多 30 張');
   if (profile.deck.filter(x=>x===id).length>=2) return toast('同一張卡最多放入 2 張');
   if (!persist({ ...profile, deck: [...profile.deck, id] })) return;
@@ -494,7 +495,7 @@ document.addEventListener('click', e => {
   if (button.dataset.remove) { const at=profile.deck.indexOf(button.dataset.remove); if(at>=0&&persist({...profile,deck:profile.deck.filter((_,i)=>i!==at)}))render(); return; }
   if (button.dataset.filter) { filter=button.dataset.filter; visible=24; render(); return; }
   if (button.dataset.edit) { const card=profile.custom.find(c=>c.id===button.dataset.edit);if(!card)return;editingId=card.id;editSource=JSON.stringify(card);formBase=structuredClone(card);storeCardDraft();modal.close();screen='workshop';render();return; }
-  if (button.dataset.template) { editingId='';editSource='';formBase=structuredClone(catalog.find(c=>c.id===button.dataset.template));storeCardDraft(); modal.close(); screen='workshop'; render(); return; }
+  if (button.dataset.template) { const card=displayCard(button.dataset.template);if(!card)return toast('找不到卡牌');editingId='';editSource='';formBase=structuredClone(card);storeCardDraft(); modal.close(); screen='workshop'; render(); return; }
   if (button.dataset.preset) { if(!persist({...profile,deck:[...PRESETS[button.dataset.preset].deck]}))return;savedDeckId='';deckName='';render();toast('已套用預設卡組');return; }
   if (button.dataset.delete) {
     const id=button.dataset.delete;

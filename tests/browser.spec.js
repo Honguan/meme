@@ -714,6 +714,47 @@ test('touch drag deploys without scrolling the page, and touch cancellation spen
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
   await page.screenshot({path:'.artifacts/drag-duel-mobile.png',fullPage:true});
 });
+test('removed battle snapshots cannot corrupt decks and remain usable as new templates',async({page,context})=>{
+  await dragDeck(page);const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  const name=await page.locator('.own-formation .board-unit-name').first().textContent();
+  const id=await page.evaluate(name=>JSON.parse(localStorage.getItem('meme-clash-v1')).custom.find(c=>c.name===name).id,name);
+  await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');
+  await page.locator(`[data-card="${id}"]`).click();await page.locator(`[data-delete="${id}"]`).click();await page.locator('#confirm-delete').click();
+  const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  await page.locator('[data-nav="battle"]').click();await page.locator('.own-formation [data-slot="0"]').click();await page.locator('[data-action="inspect"]').click();
+  await page.locator(`[data-add="${id}"]`).click();expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+  expect(()=>parseProfile(JSON.parse(saved))).not.toThrow();await page.locator(`[data-template="${id}"]`).click();
+  await expect(page.locator('#card-form [name="name"]')).toHaveValue(name);await page.locator('#card-form [type="submit"]').click();
+  const created=parseProfile(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1'))));
+  expect(created.custom.some(c=>c.id===id)).toBe(false);expect(created.deck).not.toContain(id);
+  expect(created.custom.at(-1).name).toBe(name);expect(created.custom.at(-1).id).not.toBe(id);expect(errors).toEqual([]);
+  const reload=await context.newPage();try{await reload.goto('/');await expect(reload.getByRole('button',{name:'原始存檔恢復',exact:true})).toHaveCount(0);}finally{await reload.close();}
+});
+
+test('mobile native taps deploy, reposition and cancel without unintended spending',async({browser,baseURL},testInfo)=>{
+  const context=await browser.newContext({baseURL,viewport:{width:390,height:844},hasTouch:true,isMobile:true}),page=await context.newPage(),errors=[];
+  page.on('pageerror',error=>errors.push(error.message));
+  try {
+    await dragDeck(page);const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+    const hand=page.locator('.hand-cards [data-hand]'),own=page.locator('.own-formation');
+    await hand.first().tap();await expect(hand.first()).toHaveAttribute('aria-pressed','true');
+    await page.getByRole('button',{name:'取消選擇',exact:true}).tap();await expect(hand.first()).toHaveAttribute('aria-pressed','false');
+    await expect(hand).toHaveCount(5);await expect(page.locator('.energy-box strong')).toHaveText('3/ 3');
+    await hand.first().tap();await page.locator('.opponent-formation [data-slot="1"]').tap();
+    await expect(hand).toHaveCount(5);await expect(page.locator('.energy-box strong')).toHaveText('3/ 3');
+    await expect(hand.first()).toHaveAttribute('aria-pressed','false');await hand.first().tap();
+    await own.locator('[data-slot="1"]').tap();await expect(hand).toHaveCount(4);await expect(page.locator('.energy-box strong')).toHaveText('2/ 3');
+    const uid=await own.locator('[data-slot="1"]').getAttribute('data-unit');
+    await own.locator('[data-slot="1"]').tap();await own.locator('[data-slot="2"]').tap();
+    await expect(own.locator('[data-slot="2"]')).toHaveAttribute('data-unit',uid);await expect(page.locator('.energy-box strong')).toHaveText('2/ 3');
+    await hand.first().tap();await page.getByRole('button',{name:'卡牌詳情',exact:true}).tap();await expect(page.locator('#modal')).toBeVisible();
+    await page.getByRole('button',{name:'關閉',exact:true}).tap();await page.getByRole('button',{name:'取消選擇',exact:true}).tap();
+    await own.locator('[data-slot="1"]').tap();await expect(hand).toHaveCount(4);await expect(own.locator('[data-slot="1"]')).not.toHaveClass(/occupied/);
+    expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);expect(errors).toEqual([]);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:testInfo.outputPath('native-mobile-taps.png'),fullPage:true});
+  } finally {await context.close();}
+});
+
 test('dragging near the top edge scrolls a short viewport back to the board',async({page})=>{
   await page.setViewportSize({width:320,height:568});await dragDeck(page);
   const hand=page.locator('.hand-cards [data-hand]');await hand.first().scrollIntoViewIfNeeded();
