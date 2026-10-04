@@ -1202,6 +1202,52 @@ test('real desktop match animates and finishes a round without console errors',a
   expect(errors).toEqual([]);
 });
 
+test('reduced-motion idle arenas display delayed art and stop painting after disposal',async({page})=>{
+  test.skip(!!process.env.TEST_BASE_URL,'Arena instrumentation requires the managed Vite source server.');
+  await page.emulateMedia({reducedMotion:'reduce'});await page.goto('/');
+  const png=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=c.height=8;const ctx=c.getContext('2d');ctx.fillStyle='#ff0000';ctx.fillRect(0,0,8,8);return c.toDataURL('image/png').split(',')[1];});
+  let release;const gate=new Promise(resolve=>release=resolve);await page.route('**/idle-delayed-art.png',async route=>{await gate;await route.fulfill({contentType:'image/png',body:Buffer.from(png,'base64')});});
+  const requested=page.waitForRequest('**/idle-delayed-art.png');
+  try{
+    await page.evaluate(async()=>{const {Arena}=await import('/src/arena.js'),{createGame,summon}=await import('/src/game.js'),{CORE}=await import('/src/catalog.js');
+      const game=createGame(),canvas=document.createElement('canvas');game.units=[];summon(game,{...CORE[0],name:'Late art',image:new URL('/idle-delayed-art.png',location.href).href},0);canvas.id='idle-art-arena';document.body.append(canvas);
+      const arena=new Arena(canvas,game,()=>{},()=>{}),draw=arena.draw.bind(arena);arena.draws=0;arena.draw=now=>{arena.draws++;draw(now);};window.idleArtArena=arena;window.idleArtState=JSON.stringify(game);
+    });
+    await requested;await expect.poll(()=>page.evaluate(()=>window.idleArtArena.draws)).toBeGreaterThanOrEqual(2);
+    const pixel=()=>page.evaluate(()=>{const a=window.idleArtArena,ratio=a.canvas.width/1100;return [...a.ctx.getImageData(Math.round(235*ratio),Math.round(118*ratio),1,1).data];});
+    expect(await pixel()).not.toEqual([255,0,0,255]);release();await expect.poll(pixel).toEqual([255,0,0,255]);
+    expect(await page.evaluate(()=>JSON.stringify(window.idleArtArena.game)===window.idleArtState)).toBeTruthy();
+    const draws=await page.evaluate(()=>{window.idleArtArena.destroy();return window.idleArtArena.draws;});await page.waitForTimeout(200);expect(await page.evaluate(()=>window.idleArtArena.draws)).toBe(draws);
+  }finally{release();await page.evaluate(()=>{window.idleArtArena?.destroy();window.idleArtArena?.canvas.remove();delete window.idleArtArena;delete window.idleArtState;});}
+});
+
+test('reduced-motion idle arenas limit painting without throttling replay or impact presentation',async({page})=>{
+  test.skip(!!process.env.TEST_BASE_URL,'Arena instrumentation requires the managed Vite source server.');
+  await page.emulateMedia({reducedMotion:'reduce'});await page.goto('/');
+  const measure=()=>page.evaluate(async()=>{
+    const {Arena}=await import('/src/arena.js'),{createGame}=await import('/src/game.js');
+    const raf=window.requestAnimationFrame;window.requestAnimationFrame=()=>0;
+    const game=createGame(),canvas=document.createElement('canvas');game.units=[];game.field='fine';
+    let draws=0,arena;
+    try{
+      arena=new Arena(canvas,game,()=>{},()=>{});const draw=arena.draw.bind(arena);arena.draw=now=>{draws++;draw(now);};
+      const before=JSON.stringify(game),start=performance.now();for(let i=0;i<=60;i++)arena.animate(start+i*1000/60);
+      const idle=draws,nonblank=arena.ctx.getImageData(0,0,1,1).data[3]>0;
+      game.field='moon';arena.animate(start+1200);const refresh=draws>idle;
+      arena.startReplay({units:[],field:'moon',round:game.round,frames:[],duration:100000});
+      const replayStart=draws;for(let i=0;i<=60;i++)arena.animate(arena.started+i*1000/60);const replay=draws-replayStart;
+      arena.replay=null;arena.running=false;arena.battle=null;
+      arena.presentImpact(550,200,{tag:'bonk'},{tag:'chaos'},{changes:[{uid:'idle-result',name:'Idle result',side:0,x:235,y:200,hp:-2,shield:0,ko:false}],traps:[]});
+      const impactStart=draws,at=arena.impacts[0].at;for(let i=0;i<6;i++)arena.animate(at+i*20);
+      const impact=draws-impactStart,label=canvas.getAttribute('aria-label');arena.animate(at+1000);const cleared=arena.impacts.length===0;
+      const count=draws;arena.destroy();return {idle,replay,impact,nonblank,refresh,label,cleared,unchanged:JSON.stringify({...game,field:'fine'})===before,disposed:arena.disposed,draws:count};
+    }finally{arena?.destroy();window.requestAnimationFrame=raf;}
+  });
+  const reduced=await measure();expect(reduced.idle).toBeGreaterThan(0);expect(reduced.idle).toBeLessThanOrEqual(11);expect(reduced.replay).toBe(61);expect(reduced.impact).toBe(6);
+  expect(reduced).toMatchObject({nonblank:true,refresh:true,label:'迷因對決：Idle result HP -2',cleared:true,unchanged:true,disposed:true});
+  await page.emulateMedia({reducedMotion:'no-preference'});const normal=await measure();expect(normal.idle).toBe(61);expect(normal.replay).toBe(61);expect(normal.impact).toBe(6);
+});
+
 test('existing arenas adopt live reduced-motion changes and suppress queued presentation motion',async({page})=>{
   test.skip(!!process.env.TEST_BASE_URL,'Arena instrumentation requires the managed Vite source server.');
   await page.emulateMedia({reducedMotion:'no-preference'});await page.goto('/');

@@ -86,7 +86,10 @@ export class Arena {
       this.onEnd();
     }
     if (this.disposed) return;
-    this.draw(now);
+    // Keep late-loading art visible without repainting a static scene every frame.
+    if (this.running || !this.reduced || this.impacts.length || now - (this.lastDraw ?? -Infinity) >= 100) {
+      this.draw(now);this.lastDraw=now;
+    }
     this.frame = requestAnimationFrame(this.animate);
   }
   draw(now) {
