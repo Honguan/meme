@@ -15,6 +15,11 @@ const rows = `
 選擇卡組|Select a deck|デッキを選択|Seleccionar mazo
 卡組名稱|Deck name|デッキ名|Nombre del mazo
 保存卡組|Save deck|デッキを保存|Guardar mazo
+還原已保存卡組|Restore saved deck|保存済みデッキを復元|Restaurar mazo guardado
+還原已保存卡組？|Restore this saved deck?|保存済みデッキを復元しますか？|¿Restaurar este mazo guardado?
+目前卡組與名稱修改將被已保存版本取代。|Current deck and name edits will be replaced by the saved version.|現在のデッキと名前の変更は保存済みの内容に置き換わります。|Los cambios actuales del mazo y su nombre se sustituirán por la versión guardada.
+確認還原|Confirm restore|復元を確認|Confirmar restauración
+卡組已還原|Deck restored|デッキを復元しました|Mazo restaurado
 刪除已保存卡組|Delete saved deck|保存済みデッキを削除|Eliminar mazo guardado
 刪除已保存卡組？|Delete this saved deck?|保存済みデッキを削除しますか？|¿Eliminar este mazo guardado?
 覆寫已保存卡組？|Overwrite this saved deck?|保存済みデッキを上書きしますか？|¿Sobrescribir este mazo guardado?

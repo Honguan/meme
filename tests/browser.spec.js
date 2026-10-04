@@ -4,6 +4,53 @@ import { CATALOG } from '../src/catalog.js';
 import { DRAFT_KEY } from '../src/draft.js';
 import { createGame } from '../src/game.js';
 
+test('saved deck restore confirms edits, keeps card drafts and focuses the restored control across locales and layouts',async({page},testInfo)=>{
+  const profile=freshProfile(),card={id:'custom-restore',name:'生命值 角色',type:'monster',tag:'brain',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'保留創作',effects:[],origin:'自訂'};
+  profile.custom=[card];profile.favorites=[card.id];profile.stats={wins:4,losses:3,games:7};
+  profile.decks=[{id:'restore-draft',name:`卡牌詳情 ${'A'.repeat(41)}`,deck:[card.id,card.id,'tape']},{id:'restore-empty',name:'空卡組',deck:[]},{id:'restore-full',name:'完整卡組',deck:[...profile.deck]}];
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);await page.goto('/');
+  await page.locator('[data-nav="workshop"]').click();await expect(page.locator('[data-action="restore-deck"]')).toBeDisabled();
+  await page.locator('#card-form [name="name"]').fill('未完成創作');await page.locator('#card-form [name="hp"]').fill('');const draft=await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY);
+  for(const [locale,label,title]of [['en','Restore saved deck','Restore this saved deck?'],['ja','保存済みデッキを復元','保存済みデッキを復元しますか？'],['es','Restaurar mazo guardado','¿Restaurar este mazo guardado?'],['zh-Hant','還原已保存卡組','還原已保存卡組？']]){
+    await page.locator('[data-action="appearance"]').click();await page.locator('#interface-language').selectOption(locale);await page.keyboard.press('Escape');
+    for(const [screen,width]of [['collection',1440],['workshop',320]]){
+      await page.setViewportSize({width,height:900});await page.locator(`[data-nav="${screen}"]`).click();await page.locator('#saved-deck').selectOption('restore-draft');
+      await page.locator(`[data-remove="${card.id}"]`).click();await page.locator('#deck-name').fill('尚未保存的名稱');
+      const raw=await page.evaluate(()=>localStorage.getItem('meme-clash-v1')),restore=page.locator('[data-action="restore-deck"]');
+      await expect(restore).toHaveAccessibleName(label);await expect(restore).toHaveAttribute('title',label);
+      const layout=await page.locator('.deck-select-row').evaluate(row=>({width:row.clientWidth,scroll:row.scrollWidth,left:row.getBoundingClientRect().left,right:row.getBoundingClientRect().right,viewport:innerWidth,page:document.documentElement.scrollWidth,boxes:[...row.children].map(el=>{const {left,right}=el.getBoundingClientRect();return {left,right};})}));
+      expect(layout.scroll<=layout.width&&layout.page<=layout.viewport&&layout.boxes.every((b,i)=>b.left>=layout.left&&b.right<=layout.right&&(!i||b.left>=layout.boxes[i-1].right)),JSON.stringify(layout)).toBeTruthy();
+      await restore.focus();await page.keyboard.press('Enter');await expect(page.locator('#modal')).toHaveAccessibleName(title);await expect(page.locator('#modal [data-original]')).toHaveText(profile.decks[0].name);
+      expect(await page.locator('#modal').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBeTruthy();await page.keyboard.press('Escape');await expect(restore).toBeFocused();
+      expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(raw);await expect(page.locator('#deck-name')).toHaveValue('尚未保存的名稱');
+      await restore.click();await page.locator('#confirm-restore-deck').click();await expect(restore).toBeFocused();await expect(page.locator('#deck-name')).toHaveValue(profile.decks[0].name);await expect(page.locator('#saved-deck')).toHaveValue('restore-draft');
+      const restored=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));expect(restored).toEqual({...profile,deck:profile.decks[0].deck});expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBe(draft);
+      if(screen==='workshop'){await expect(page.locator('#card-form [name="name"]')).toHaveValue('未完成創作');await expect(page.locator('#card-form [name="hp"]')).toHaveValue('');}
+    }
+  }
+  for(const saved of profile.decks.slice(1)){
+    await page.locator('#saved-deck').selectOption(saved.id);await page.locator('#deck-name').fill('名稱草稿');await page.locator('[data-action="restore-deck"]').click();await page.locator('#confirm-restore-deck').click();
+    expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).deck)).toEqual(saved.deck);await expect(page.locator('#deck-name')).toHaveValue(saved.name);
+  }
+  await page.setViewportSize({width:390,height:900});await page.locator('#saved-deck').selectOption('restore-draft');await page.locator('#saved-deck').focus();await page.screenshot({path:`.artifacts/deck-restore-${testInfo.project.name}-mobile.png`});expect(errors).toEqual([]);
+});
+
+test('saved deck restore retains pending edits on quota failures and rejects external stale or corrupt saves',async({page})=>{
+  const profile=freshProfile(),saved={id:'restore-guard',name:'已保存版本',deck:profile.deck.slice(0,3)};profile.decks=[saved];
+  await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);await page.goto('/');await page.locator('[data-nav="collection"]').click();await page.locator('#saved-deck').selectOption(saved.id);
+  const change=async()=>{await page.locator(`[data-remove="${saved.deck[0]}"]`).click();await page.locator('#deck-name').fill('待保留名稱');await page.locator('[data-action="restore-deck"]').click();};
+  await change();const raw=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  await page.evaluate(()=>{window.restoreFails=true;const set=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(k==='meme-clash-v1'&&window.restoreFails)throw new Error('quota');return set.call(this,k,v);};});
+  await page.locator('#confirm-restore-deck').click();await expect(page.locator('#modal')).toBeVisible();await expect(page.locator('#deck-name')).toHaveValue('待保留名稱');expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(raw);
+  await page.evaluate(()=>window.restoreFails=false);await page.locator('#confirm-restore-deck').click();await expect(page.locator('[data-action="restore-deck"]')).toBeFocused();expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).deck)).toEqual(saved.deck);
+  await change();
+  for(const external of [JSON.stringify({...profile,stats:{wins:5,losses:3,games:8}}),'{broken']){
+    await page.evaluate(raw=>localStorage.setItem('meme-clash-v1',raw),external);await page.locator('#confirm-restore-deck').click();await expect(page.locator('#modal')).toBeVisible();await expect(page.locator('#deck-name')).toHaveValue('待保留名稱');expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(external);
+    await expect(page.locator('#toast')).toContainText('存檔已在其他分頁更新');
+  }
+  await page.keyboard.press('Escape');await expect(page.locator('[data-action="restore-deck"]')).toBeFocused();await expect(page.locator('.deck-count')).toContainText(String(saved.deck.length-1));
+});
+
 test('deck sidebar opens full card details without losing drafts and restores focus after edits to the deck',async({page},testInfo)=>{
   const profile=freshProfile(),card={id:'custom-deck-inspect',name:`生命值 ${'A'.repeat(68)}`,type:'monster',tag:'glitch',cost:0,attack:2,hp:20,speed:5,image:'',flavor:'側欄測試',effects:[{trigger:'play',action:'shield',target:'self',amount:3}],origin:'自訂'},field={...card,id:'custom-deck-field',name:'匯入 護盾',type:'field',field:'xp'};
   profile.custom=[card,field];profile.deck[0]=card.id;profile.deck[1]=field.id;profile.favorites=[card.id];profile.decks=[{id:'inspect-saved',name:'原卡組',deck:[...profile.deck]}];
