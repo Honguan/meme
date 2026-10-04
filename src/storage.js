@@ -1,6 +1,18 @@
 import { CATALOG, DEFAULT_DECK, validateCustom, templateCards } from './catalog.js';
 
 export const STORAGE_KEY = 'meme-clash-v1';
+export function mergeCardPack(profile, data) {
+  if (!data || data.kind !== 'meme-clash-card-pack' || data.version !== 1 || !Array.isArray(data.cards) || !data.cards.length || data.cards.length > 1000) throw new Error('不支援的卡包格式');
+  if (profile.custom.length + data.cards.length > 1000) throw new Error('最多保存 1000 張自訂卡牌');
+  const ids = new Set(profile.custom.map(card => card.id));
+  const cards = data.cards.map(input => {
+    const card = validateCustom(input);
+    while (ids.has(card.id)) card.id = `custom-${globalThis.crypto.randomUUID()}`;
+    ids.add(card.id);
+    return card;
+  });
+  return { ...profile, custom: [...profile.custom, ...cards] };
+}
 export function parseProfile(data) {
   if (!data || data.version !== 1 || !Array.isArray(data.custom) || data.custom.length > 1000) throw new Error('不支援的卡組格式');
   const custom = data.custom.map(card => {

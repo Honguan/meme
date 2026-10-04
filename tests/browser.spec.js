@@ -4,6 +4,60 @@ import { CATALOG } from '../src/catalog.js';
 import { DRAFT_KEY } from '../src/draft.js';
 import { createGame } from '../src/game.js';
 
+test('card pack downloads and imports add copies without changing decks, favorites, stats or editing drafts',async({page},testInfo)=>{
+  const card={id:'custom-pack-source',name:'交換迷因',type:'monster',tag:'brain',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'原始創作',effects:[{trigger:'play',action:'shield',target:'self',amount:2},{trigger:'hit',action:'damage',target:'enemy',amount:3},{trigger:'round',action:'energy',target:'enemy',amount:1},{trigger:'death',action:'heal',target:'allies',amount:4}]};
+  const profile=parseProfile({...freshProfile(),custom:[card,{...card,id:'custom-pack-field',name:'分享場地',type:'field',field:'xp',effects:[{trigger:'play',action:'draw',target:'self',amount:1}]}]});
+  profile.deck[0]=card.id;profile.decks=[{id:'saved-pack-test',name:'保留套裝',deck:[card.id]}];profile.favorites=[card.id];profile.stats={wins:4,losses:3,games:7};
+  await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);await page.goto('/');
+  const readDownload=async selector=>{const pending=page.waitForEvent('download');await page.locator(selector).click();const file=await pending,stream=await file.createReadStream(),chunks=[];for await(const chunk of stream)chunks.push(chunk);expect(file.suggestedFilename()).toBe('meme-clash-cards.json');return JSON.parse(Buffer.concat(chunks).toString('utf8'));};
+  await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');await page.locator(`[data-card="${card.id}"]`).click();
+  for(const width of [1440,390,320]){await page.setViewportSize({width,height:900});expect(await page.locator('#modal').evaluate(d=>d.scrollWidth<=d.clientWidth)).toBeTruthy();await expect(page.locator('[data-export-card]')).toBeVisible();}
+  const single=await readDownload('[data-export-card]');expect(single).toEqual({kind:'meme-clash-card-pack',version:1,cards:[profile.custom[0]]});
+  await page.locator('[data-edit]').click();await page.locator('#card-form [name="name"]').fill('尚未完成的創作');await page.locator('#card-form [name="hp"]').fill('');
+  const stored=await page.evaluate(()=>localStorage.getItem('meme-clash-v1')),draft=await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY),pack=await readDownload('[data-action="export-cards"]');
+  expect(pack).toEqual({kind:'meme-clash-card-pack',version:1,cards:profile.custom});expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);
+  const upload=async()=>{const chooser=page.waitForEvent('filechooser');await page.locator('#app [data-action="import"]').click();await(await chooser).setFiles({name:'shared-cards.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(pack))});await expect(page.locator('#modal')).toHaveAccessibleName('匯入卡包');};
+  await upload();await page.locator('#modal .quiet-button[data-action="close"]').click();expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);
+  await upload();await page.evaluate(()=>{window.packSet=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){if(key==='meme-clash-v1')throw new DOMException('Quota exceeded','QuotaExceededError');return window.packSet.call(this,key,value);};});
+  await page.locator('#confirm-import').click();await expect(page.locator('#toast')).toContainText('瀏覽器儲存空間不足');expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBe(draft);
+  await page.evaluate(()=>Storage.prototype.setItem=window.packSet);await page.locator('#confirm-import').click();await expect(page.locator('#modal')).not.toBeVisible();
+  const next=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));expect(next.custom).toHaveLength(4);expect(next.custom.slice(0,2)).toEqual(profile.custom);expect(new Set(next.custom.map(c=>c.id)).size).toBe(4);
+  for(const key of ['deck','decks','favorites','stats','web'])expect(next[key]).toEqual(profile[key]);
+  next.custom.slice(2).forEach((c,i)=>{expect(c.id).not.toBe(profile.custom[i].id);expect(c.effects).toEqual(profile.custom[i].effects);expect(c.name).toBe(profile.custom[i].name);});
+  await expect(page.locator('#card-form h2')).toHaveText('編輯卡牌');await expect(page.locator('#card-form [name="name"]')).toHaveValue('尚未完成的創作');await expect(page.locator('#card-form [name="hp"]')).toHaveValue('');expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBe(draft);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:`.artifacts/card-pack-${testInfo.project.name}-mobile.png`});
+  for(const [locale,label]of [['en','Export card pack'],['ja','カードパックをエクスポート'],['es','Exportar paquete de cartas']]){await page.locator('[data-action="appearance"]').click();await page.locator('#interface-language').selectOption(locale);await page.locator('#modal [data-action="close"]').click();await expect(page.locator('[data-action="export-cards"]')).toHaveAccessibleName(label);await expect(page.locator('[data-action="export-cards"]')).toHaveAttribute('title',label);}
+  await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(page.locator('#card-form [name="name"]')).toHaveValue('尚未完成的創作');expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')))).toEqual(next);
+});
+
+for(const mode of ['recovery','stale'])test(`card pack imports preserve ${mode} save protection`,async({page})=>{
+  const profile=freshProfile(),raw=mode==='recovery'?'{broken':JSON.stringify(profile),pack={kind:'meme-clash-card-pack',version:1,cards:[{name:'交換卡',type:'monster',tag:'bonk',cost:0,attack:1,hp:20,speed:5,image:'',flavor:'',effects:[]}]};
+  await page.addInitScript(raw=>localStorage.setItem('meme-clash-v1',raw),raw);await page.goto('/');if(mode==='recovery')await page.locator('#modal [data-action="close"]').click();await page.locator('[data-nav="workshop"]').click();await expect(page.locator('[data-action="export-cards"]')).toBeDisabled();
+  await page.locator('#card-form [name="name"]').fill('保留草稿');const draft=await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY);
+  const chooser=page.waitForEvent('filechooser');await page.locator('#app [data-action="import"]').click();await(await chooser).setFiles({name:'pack.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(pack))});await expect(page.locator('#modal')).toHaveAccessibleName('匯入卡包');
+  const external=JSON.stringify({...profile,stats:{wins:99,losses:0,games:99}});if(mode==='stale')await page.evaluate(raw=>localStorage.setItem('meme-clash-v1',raw),external);
+  await page.locator('#confirm-import').click();if(mode==='recovery')await expect(page.locator('#modal')).toHaveAccessibleName('存檔無法讀取');else await expect(page.locator('#toast')).toContainText('存檔已在其他分頁更新');
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(mode==='recovery'?raw:external);expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBe(draft);await expect(page.locator('#card-form [name="name"]')).toHaveValue('保留草稿');
+});
+
+test('card pack imports reject invalid packages atomically and enforce the combined 1000-card limit',async({page})=>{
+  const card={name:'容量卡',type:'monster',tag:'bonk',cost:0,attack:1,hp:20,speed:5,image:'',flavor:'',effects:[]},profile=freshProfile();profile.custom=Array.from({length:999},(_,i)=>({...card,id:`custom-pack-limit-${i}`}));
+  await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),profile);await page.goto('/');await page.locator('[data-nav="workshop"]').click();let stored=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  const upload=async data=>{const chooser=page.waitForEvent('filechooser');await page.locator('[data-action="import"]').click();await(await chooser).setFiles({name:'capacity-pack.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(data))});};
+  const pack={kind:'meme-clash-card-pack',version:1,cards:[card]};
+  for(const bad of [{...pack,cards:[{...card,hp:0}]},{...pack,cards:[card,card]},{...pack,version:2}]){await upload(bad);await expect(page.locator('#toast')).toContainText('匯入失敗');await expect(page.locator('#modal')).not.toBeVisible();expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);}
+  await upload(pack);await page.locator('#confirm-import').click();await expect(page.locator('.small-count')).toContainText('1000');stored=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));expect(JSON.parse(stored).custom).toHaveLength(1000);
+  await upload(pack);await expect(page.locator('#toast')).toContainText('最多保存 1000 張');await expect(page.locator('#modal')).not.toBeVisible();expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);
+});
+
+test('latest selected import wins across card packs and full backups',async({page})=>{
+  const profile=freshProfile(),card={name:'新卡包',type:'monster',tag:'bonk',cost:0,attack:1,hp:20,speed:5,image:'',flavor:'',effects:[]},pack={kind:'meme-clash-card-pack',version:1,cards:[card]};
+  await page.addInitScript(profile=>{localStorage.setItem('meme-clash-v1',JSON.stringify(profile));const text=File.prototype.text;File.prototype.text=function(){const read=text.call(this);return this.name==='slow.json'?new Promise((resolve,reject)=>{window.finishPackRead=()=>read.then(resolve,reject);}):read;};},profile);await page.goto('/');await page.locator('[data-nav="workshop"]').click();
+  const upload=async(name,data)=>{const chooser=page.waitForEvent('filechooser');await page.locator('[data-action="import"]').click();await(await chooser).setFiles({name,mimeType:'application/json',buffer:Buffer.from(JSON.stringify(data))});};
+  await upload('slow.json',profile);await upload('latest.json',pack);await expect(page.locator('#modal')).toHaveAccessibleName('匯入卡包');await page.evaluate(()=>window.finishPackRead());await expect(page.locator('#modal')).toHaveAccessibleName('匯入卡包');await page.locator('#confirm-import').click();expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).custom.length)).toBe(1);
+  await upload('slow.json',pack);await upload('latest.json',profile);await expect(page.locator('#modal')).toHaveAccessibleName('匯入卡組');await page.evaluate(()=>window.finishPackRead());await expect(page.locator('#modal')).toHaveAccessibleName('匯入卡組');await page.locator('#confirm-import').click();expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')))).toEqual(profile);
+});
+
 test('graveyard inspection groups live discards and preserves battle state, focus and mobile layouts',async({page},testInfo)=>{
   const profile=freshProfile(),unit={id:'custom-discard-unit',name:'墓地測試角色',type:'monster',tag:'bonk',cost:0,attack:1,hp:20,speed:5,image:'',flavor:'',effects:[]};
   const spells=Array.from({length:8},(_,i)=>({...unit,id:`custom-discard-${i}`,name:i===0?'A'.repeat(72):`墓地角色 ${i}`,type:'spell',effects:[{trigger:'play',action:'heal',target:'self',amount:1}]}));
@@ -21,7 +75,7 @@ test('graveyard inspection groups live discards and preserves battle state, focu
   for(const width of [1440,390,320]){await page.setViewportSize({width,height:900});expect(await page.locator('#modal').evaluate(d=>d.scrollWidth<=d.clientWidth)).toBeTruthy();
     const bounds=await cards.evaluateAll(rows=>rows.map(row=>{const r=row.getBoundingClientRect();return {top:r.top,bottom:r.bottom,right:r.right};}));expect(bounds[1].top).toBeGreaterThanOrEqual(bounds[0].bottom);expect(bounds.every(r=>r.right<=width)).toBeTruthy();
     if(width===390)await page.screenshot({path:`.artifacts/discard-${testInfo.project.name}-mobile.png`});}
-  await cards.nth(1).click();await expect(page.locator('#modal h2')).toHaveText(spells[0].name);for(const selector of ['[data-add]','[data-template]','[data-edit]','[data-delete]','[data-favorite]'])await expect(page.locator(`#modal ${selector}`)).toBeHidden();
+  await cards.nth(1).click();await expect(page.locator('#modal h2')).toHaveText(spells[0].name);for(const selector of ['[data-add]','[data-template]','[data-edit]','[data-delete]','[data-favorite]','[data-export-card]'])await expect(page.locator(`#modal ${selector}`)).toBeHidden();
   await page.locator('[data-preview]').click();await expect(page.locator('#modal-preview-stage canvas')).toBeVisible();await page.locator('[data-focus-card]').click();await expect(page.locator(`[data-discard-card="${spells[0].id}"]`)).toBeFocused();
   await page.locator('.discard-modal button[data-side="1"]').click();await expect(page.locator('#discard-list')).toContainText('尚無棄牌');await page.keyboard.press('Escape');await expect(pile).toBeFocused();
   expect(await page.locator('.duel-table').textContent()).toBe(snapshot);expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);

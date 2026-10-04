@@ -25,7 +25,7 @@ for(const side of [0,1])test(`online graveyard side ${side} reads public snapsho
     await page.locator(`.discard-modal button[data-side="${owner}"]`).click();const id=`online-${owner}-${first[7].id}`,row=page.locator(`[data-discard-card="${id}"]`);
     await expect(page.locator('#discard-list .discard-card')).toHaveCount(1);await expect(row).toContainText(`${owner===0?'自己':'對手'}原卡 7`);await expect(row).toContainText(owner===0?'×2':'×1');await expect(page.locator(`[data-discard-card="${hiddenTrap}"]`)).toHaveCount(0);
     await row.click();await expect(page.locator('#modal h2')).toHaveText(`${owner===0?'自己':'對手'}原卡 7`);await expect(page.locator('[data-preview]')).toHaveAttribute('data-preview',id);await expect(page.locator('#modal [data-play]')).toHaveCount(0);
-    for(const selector of ['[data-add]','[data-template]','[data-edit]','[data-delete]','[data-favorite]'])await expect(page.locator(`#modal ${selector}`)).toBeHidden();
+    for(const selector of ['[data-add]','[data-template]','[data-edit]','[data-delete]','[data-favorite]','[data-export-card]'])await expect(page.locator(`#modal ${selector}`)).toBeHidden();
     await page.locator('[data-focus-card]').click();await expect(row).toBeFocused();
   }
   await page.keyboard.press('Escape');await expect(page.locator('.duel-actions [data-action="discard"]')).toBeFocused();

@@ -196,6 +196,12 @@ const rows = `
 使用卡組對決|Duel with this deck|このデッキで対戦|Jugar con este mazo
 匯出|Export|エクスポート|Exportar
 匯入|Import|インポート|Importar
+匯出卡牌|Export card|カードをエクスポート|Exportar carta
+匯出卡包|Export card pack|カードパックをエクスポート|Exportar paquete de cartas
+匯入卡包|Import card pack|カードパックをインポート|Importar paquete de cartas
+卡包已匯入|Card pack imported|カードパックをインポートしました|Paquete de cartas importado
+不支援的卡包格式|Unsupported card pack format|未対応のカードパック形式|Formato de paquete de cartas no compatible
+新增卡牌副本；保留目前卡庫、卡組、收藏與戰績。|Add card copies; keep the current library, decks, favorites and stats.|カードのコピーを追加し、現在のカード図鑑・デッキ・お気に入り・戦績を保持します。|Añade copias de las cartas y conserva la biblioteca, los mazos, los favoritos y las estadísticas.
 時機|Trigger|タイミング|Activación
 效果|Effect|効果|Efecto
 對象|Target|対象|Objetivo
