@@ -136,6 +136,28 @@ test('local UI matches complete custom decks whose UTF-8 payload exceeds 100 KB'
   } finally {await leave(page);await leave(peer);await context.close();}
 });
 
+test('mixed resource cards preview successfully and give only the opponent cards and energy online',async({page,browser,baseURL})=>{
+  test.skip(!['localhost','127.0.0.1','[::1]'].includes(new URL(baseURL).hostname),'Custom resource effects run only against the local test database.');
+  const context=await browser.newContext(),peer=await context.newPage();
+  const monster={id:'custom-gift-unit',name:'Gift unit',type:'monster',tag:'bonk',cost:0,attack:1,hp:20,speed:5,image:'',flavor:'',effects:[]};
+  const gift={...monster,id:'custom-gift-spell',name:'Gift spell',type:'spell',effects:[{trigger:'play',action:'heal',target:'ally',amount:3},{trigger:'play',action:'draw',target:'enemy',amount:1},{trigger:'play',action:'energy',target:'enemies',amount:2}]};
+  const gifts=Array.from({length:9},(_,i)=>({...gift,id:`custom-gift-spell-${i}`}));
+  const profile={version:1,custom:[monster,...gifts],deck:[monster.id,...gifts.map(c=>c.id)],web:[],stats:{}};
+  try{
+    for(const player of [page,peer]){await player.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),profile);await player.goto(baseURL);}
+    const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+    await page.locator('.hand-cards [data-hand]').first().click();await page.locator('[data-action="inspect"]').click();
+    await expect(page.locator('.card-detail')).toContainText('對手抽牌 1');await expect(page.locator('.card-detail')).toContainText('對手獲得能量 2');
+    await page.locator('[data-preview]').click();await expect(page.locator('[data-preview-status]')).toContainText('登場效果');await expect(page.locator('[data-preview-status]')).toContainText('手牌 0');await page.keyboard.press('Escape');
+    await join(page);await join(peer);await expect(page.locator('#online-status')).toContainText('輪到你部署');await expect(peer.locator('#online-status')).toContainText('等待對手部署');
+    const before=await state(page);await page.locator('.hand-cards [data-hand]').first().click();await page.locator('.own-formation .occupied').first().click();
+    await expect(page.locator('.hand-cards [data-hand]')).toHaveCount(4);await expect(peer.locator('.hand-cards [data-hand]')).toHaveCount(6);
+    const after=await state(page),other=await state(peer);expect(after.version).toBe(before.version+1);expect(after.game.players[after.side].energy).toBe(3);expect(other.game.players[other.side].energy).toBe(5);
+    expect(after.game.players[other.side].hand).toEqual(Array(6).fill(null));expect(other.game.players[other.side].hand.every(id=>typeof id==='string')).toBe(true);
+    expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+  }finally{await leave(page);await leave(peer);await context.close();}
+});
+
 test('two independent players match, deploy, replay the same battle and reconnect',async({browser})=>{
   test.setTimeout(60000);
   const a=await browser.newContext(),b=await browser.newContext({viewport:{width:390,height:844}});

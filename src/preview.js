@@ -1,5 +1,5 @@
 import { CORE, DEFAULT_DECK } from './catalog.js';
-import { createGame, summon, playCard, finishRound, damage, cleanup } from './game.js';
+import { createGame, summon, playCard, playError, finishRound, damage, cleanup } from './game.js';
 import { Arena } from './arena.js';
 import { tr } from './i18n.js';
 
@@ -49,9 +49,8 @@ export function mountPreview(container, card) {
   arena = new Arena(canvas, game, afterBattle, () => show('碰撞效果'));
   show('效果演示');
   later(() => {
-    const enemyTarget = card.effects.some(e=>e.target==='enemy'||e.target==='enemies');
-    const target = game.units.find(u=>u.side===(enemyTarget?1:0));
-    resolve(() => playCard(game,0,0,target.uid), '登場效果');
+    const target = game.units.find(u=>!playError(game,0,0,u.uid));
+    resolve(() => playCard(game,0,0,target?.uid), '登場效果');
     later(() => { game.phase='battle';show('碰撞效果');arena.start(); },1100);
   },350);
   return () => { disposed=true;for(const id of timers)clearTimeout(id);timers.clear();arena.destroy(); };

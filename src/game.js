@@ -115,8 +115,9 @@ export function damage(g, unit, amount) {
 }
 export function effects(g, card, side, trigger, source, targetId) {
   for (const e of card.effects.filter(e => e.trigger === trigger)) {
-    if (e.action === 'draw') { draw(g, side, Math.min(e.amount, 9)); continue; }
-    if (e.action === 'energy') { g.players[side].energy = Math.min(99, g.players[side].energy + e.amount); continue; }
+    const recipient = e.target === 'enemy' || e.target === 'enemies' ? 1 - side : side;
+    if (e.action === 'draw') { draw(g, recipient, Math.min(e.amount, 9)); continue; }
+    if (e.action === 'energy') { g.players[recipient].energy = Math.min(99, g.players[recipient].energy + e.amount); continue; }
     for (const u of targets(g, side, e.target, source, targetId)) {
       if (e.action === 'damage') damage(g, u, e.amount);
       if (e.action === 'heal') u.hp = Math.min(u.maxHp, u.hp + e.amount);
@@ -230,6 +231,9 @@ export function finishRound(g) {
     p.ready = false;
     p.energy = Math.min(8, 2 + g.round) + Number(active.includes('stonks')) + Number(full.includes('stonks'));
     draw(g, side, 1 + Number(active.includes('brain')) + Number(full.includes('brain')));
+  }
+  for (let side = 0; side < 2; side++) {
+    const active = combos(g, side), full = combos(g, side, 3);
     for (const u of units(g, side)) {
       if (u.hp <= 0 || u.dead) continue;
       u.hitUsed = false;

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import Matter from 'matter-js';
 import { CATALOG, CORE, TAGS, validateCustom, templateCards, DEFAULT_DECK } from '../src/catalog.js';
-import { createGame, createDailyGame, randomWorldDeck, playCard, summon, collide, cleanup, finishRound, planAI, checkWinner, combos, draw, units } from '../src/game.js';
+import { createGame, createDailyGame, randomWorldDeck, playCard, summon, collide, cleanup, finishRound, planAI, checkWinner, combos, draw, units, effects } from '../src/game.js';
 import { previewGame } from '../src/preview.js';
 import { createBattle } from '../src/physics.js';
 import { parseProfile, freshProfile } from '../src/storage.js';
@@ -16,6 +16,42 @@ import { moveUnit } from '../src/game.js';
 
 function setup() { const g=createGame({seed:123}); g.units=[]; g.players.forEach(p=>{p.hand=[];p.energy=9;p.deck=[];p.discard=[];}); return g; }
 const card=id=>CORE.find(c=>c.id===id);
+
+test('resource effects honor player targets once even without units and retain caps for every trigger',()=>{
+  for(const side of [0,1])for(const [target,relative] of [['self',0],['ally',0],['allies',0],['enemy',1],['enemies',1]])for(const trigger of ['play','hit','round','death'])for(const count of [0,3]){
+    const g=setup(),recipient=relative?1-side:side;
+    for(let n=0;n<count;n++)for(const owner of [0,1])summon(g,card('doge'),owner,n);
+    g.players.forEach(p=>p.deck=Array(10).fill('doge'));
+    const resource=validateCustom({...card('doge'),effects:[{trigger,action:'draw',target,amount:3},{trigger,action:'energy',target,amount:3}]});
+    effects(g,resource,side,trigger);
+    assert.equal(g.players[recipient].hand.length,3);assert.equal(g.players[recipient].energy,12);
+    assert.equal(g.players[1-recipient].hand.length,0);assert.equal(g.players[1-recipient].energy,9);
+    g.players[recipient].hand=Array(8).fill('doge');g.players[recipient].energy=98;
+    effects(g,resource,side,trigger);assert.equal(g.players[recipient].hand.length,9);assert.equal(g.players[recipient].energy,99);
+  }
+});
+
+test('both players refresh round resources before opponent-directed round effects',()=>{
+  for(const side of [0,1]){
+    const g=setup();g.players.forEach(p=>p.deck=Array(10).fill('doge'));
+    summon(g,{...card('doge'),effects:[{trigger:'round',action:'draw',target:'enemy',amount:1},{trigger:'round',action:'energy',target:'enemies',amount:3}]},side);
+    summon(g,{...card('harold'),effects:[]},1-side);finishRound(g);
+    assert.equal(g.players[side].energy,4);assert.equal(g.players[1-side].energy,7);
+    assert.equal(g.players[side].hand.length,1);assert.equal(g.players[1-side].hand.length,2);
+  }
+});
+
+test('resource descriptions name the player rather than multiplying per unit in every locale',()=>{
+  try{
+    for(const locale of Object.keys(LANGUAGES)){
+      setLocale(locale);
+      for(const target of ['self','ally','allies','enemy','enemies']){
+        const targetName=tr(['enemy','enemies'].includes(target)?'對手':'自己');
+        for(const action of ['draw','energy'])assert.equal(effectText({type:'spell',effects:[{trigger:'play',target,action,amount:3}]}),tr('{trigger}：{target}{action} {amount}',{trigger:tr('打出時'),target:targetName,action:tr(action==='draw'?'抽牌':'獲得能量'),amount:3}));
+      }
+    }
+  }finally{setLocale('zh-Hant');}
+});
 
 test('explicit single-target plays reject the wrong side without spending and retain mixed-effect fallback',()=>{
   const g=setup();g.players[0].hand=['bonk','suit'];
