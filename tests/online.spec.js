@@ -222,6 +222,7 @@ test('confirmed departures retry disconnects, unavailable service and conflicts 
     await page.getByRole('button',{name:'離開對局',exact:true}).click();
     await page.getByRole('button',{name:'確認離開',exact:true}).click();
     await expect(page.locator('#online-status')).toHaveText('連線中斷，正在重試');
+    await expect.poll(()=>committed?.game.phase,{timeout:15000}).toBe('over');await page.reload({waitUntil:'domcontentloaded'});
     await expect(page.getByRole('button',{name:'匹配對戰',exact:true})).toBeVisible({timeout:15000});
     expect(attempts).toBe(5);
     expect(await page.evaluate(()=>sessionStorage.getItem('meme-clash-online'))).toBeNull();
@@ -234,6 +235,46 @@ test('confirmed departures retry disconnects, unavailable service and conflicts 
     await page.getByRole('button',{name:'取消匹配',exact:true}).click();
     await expect(page.getByRole('button',{name:'匹配對戰',exact:true})).toBeVisible();
   } finally {await page.unroute('**/api/match/leave');await leave(page);await leave(peer);await context.close();}
+});
+
+for(const status of ['waiting','matched'])test(`confirmed ${status} departures survive reload after a lost request`,async({page})=>{
+  const deck=loadout({deck:DEFAULT_DECK,custom:[],field:'grid'}),room=makeRoom(deck,deck,1000),initial=status==='matched'?view(room,0,0,'reload-leave',1000,1000):{status};
+  const requests=[];let attempts=0;
+  await page.route('**/api/match/**',route=>{
+    const action=new URL(route.request().url()).pathname.split('/').at(-1);requests.push({action,authorization:route.request().headers().authorization});
+    if(action==='leave')return ++attempts===1?route.abort('internetdisconnected'):route.fulfill({json:{status:'idle'}});
+    return route.fulfill({json:initial});
+  });
+  await prepare(page);const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  await join(page);await expect(page.locator('#online-status')).toContainText(status==='matched'?'輪到你部署':'尋找對手中');
+  const token=await page.evaluate(()=>sessionStorage.getItem('meme-clash-online'));
+  await page.getByRole('button',{name:status==='matched'?'離開對局':'取消匹配',exact:true}).click();
+  if(status==='matched')await page.getByRole('button',{name:'確認離開',exact:true}).click();
+  await expect(page.locator('#online-status')).toHaveText('連線中斷，正在重試');const before=requests.length;
+  await page.reload({waitUntil:'domcontentloaded'});await expect(page.getByRole('button',{name:'匹配對戰',exact:true})).toBeVisible({timeout:10000});
+  expect(requests.slice(before)).toEqual([{action:'leave',authorization:`Bearer ${token}`}]);expect(attempts).toBe(2);
+  expect(await page.evaluate(()=>sessionStorage.getItem('meme-clash-online'))).toBeNull();expect(await page.evaluate(()=>sessionStorage.getItem('meme-clash-online-leaving'))).toBeNull();
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+  await join(page);await expect(page.locator('#online-status')).toContainText(status==='matched'?'輪到你部署':'尋找對手中');
+  expect(await page.evaluate(()=>sessionStorage.getItem('meme-clash-online'))).not.toBe(token);
+  await page.getByRole('button',{name:status==='matched'?'離開對局':'取消匹配',exact:true}).click();
+  if(status==='matched')await page.getByRole('button',{name:'確認離開',exact:true}).click();
+  await expect(page.getByRole('button',{name:'匹配對戰',exact:true})).toBeVisible();
+});
+
+test('departure storage failures retain in-memory retries without changing the profile',async({page})=>{
+  let attempts=0;
+  await page.route('**/api/match/**',route=>{
+    const action=new URL(route.request().url()).pathname.split('/').at(-1);
+    if(action==='leave')return ++attempts===1?route.abort('internetdisconnected'):route.fulfill({json:{status:'idle'}});
+    return route.fulfill({json:{status:'waiting'}});
+  });
+  await prepare(page);await join(page);await expect(page.locator('#online-status')).toHaveText('尋找對手中');
+  const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  await page.evaluate(()=>{const set=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){if(key==='meme-clash-online-leaving')throw new DOMException('full','QuotaExceededError');return set.call(this,key,value);};});
+  await page.getByRole('button',{name:'取消匹配',exact:true}).click();await expect(page.locator('#online-status')).toHaveText('連線中斷，正在重試');
+  await expect(page.getByRole('button',{name:'匹配對戰',exact:true})).toBeVisible({timeout:10000});expect(attempts).toBe(2);
+  expect(await page.evaluate(()=>sessionStorage.getItem('meme-clash-online'))).toBeNull();expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
 });
 
 test('queue cancellation retries a lost request until the ticket is removed',async({page,baseURL})=>{
@@ -251,7 +292,7 @@ test('queue cancellation retries a lost request until the ticket is removed',asy
 
 test('rejected restored sessions and departures return idle without retrying obsolete credentials',async({page})=>{
   const requests=[];let rejectLeave=false;
-  await page.addInitScript(()=>sessionStorage.setItem('meme-clash-online','damaged-session'));
+  await page.addInitScript(()=>{sessionStorage.setItem('meme-clash-online','damaged-session');sessionStorage.setItem('meme-clash-online-leaving','obsolete-session');});
   await page.route('**/api/match/**',route=>{
     const request=route.request(),action=new URL(request.url()).pathname.split('/').at(-1),authorization=request.headers().authorization;
     requests.push({action,authorization});
@@ -263,7 +304,7 @@ test('rejected restored sessions and departures return idle without retrying obs
   await expect(page.getByRole('button',{name:'匹配對戰',exact:true})).toBeVisible();
   expect(await page.evaluate(()=>sessionStorage.getItem('meme-clash-online'))).toBeNull();
   await expect(page.locator('#toast')).toHaveText('連線憑證無效');
-  await page.waitForTimeout(1700);expect(requests).toHaveLength(1);
+  await page.waitForTimeout(1700);expect(requests).toEqual([{action:'state',authorization:'Bearer damaged-session'}]);expect(await page.evaluate(()=>sessionStorage.getItem('meme-clash-online-leaving'))).toBeNull();
   await join(page);await expect(page.locator('#online-status')).toHaveText('尋找對手中');
   const first=await page.evaluate(()=>sessionStorage.getItem('meme-clash-online'));expect(first).toMatch(/^[a-f0-9-]{73}$/);
   rejectLeave=true;await page.getByRole('button',{name:'取消匹配',exact:true}).click();

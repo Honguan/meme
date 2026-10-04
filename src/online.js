@@ -4,7 +4,7 @@ export class MatchClient {
   constructor(onState, onError) {
     this.onState = onState; this.onError = onError; this.pending = false; this.leaving = false;
     this.chain = Promise.resolve();
-    try { this.token = sessionStorage.getItem(KEY); } catch {}
+    try { this.token = sessionStorage.getItem(KEY); this.leaving = !!this.token && sessionStorage.getItem(`${KEY}-leaving`) === this.token; } catch {}
   }
   async join(payload) {
     if (!this.token) {
@@ -15,7 +15,10 @@ export class MatchClient {
   }
   send(action, data = {}) {
     clearTimeout(this.timer);
-    if (action === 'leave' && this.token) this.leaving = true;
+    if (action === 'leave' && this.token) {
+      this.leaving = true;
+      try { sessionStorage.setItem(`${KEY}-leaving`, this.token); } catch { this.onError('無法儲存對局連線'); }
+    }
     const task = async () => {
       if (!this.token) return;
       if (this.leaving) { action = 'leave'; data = {}; }
@@ -29,7 +32,7 @@ export class MatchClient {
         if (!response.ok && !rejected) throw new Error(state.error || '匹配服務暫時無法連線');
         if (state.status === 'idle') {
           this.token = null; this.leaving = false;
-          try { sessionStorage.removeItem(KEY); } catch {}
+          try { sessionStorage.removeItem(KEY); sessionStorage.removeItem(`${KEY}-leaving`); } catch {}
         }
         this.pending = false; this.onState(state);
         if (rejected) this.onError('連線憑證無效');
