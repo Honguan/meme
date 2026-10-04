@@ -395,6 +395,53 @@ test('collection filters retain focus after redraw for continued keyboard naviga
   expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
 });
 
+test('saved deck selection retains focus on both pages and failed writes',async({page})=>{
+  const profile=freshProfile(),deck=profile.deck.slice(0,3);profile.decks=[{id:'focus-select',name:'Focus select',deck}];
+  await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),profile);await page.goto('/');
+  for(const [screen,width] of [['collection',1440],['workshop',390]]){
+    await page.setViewportSize({width,height:900});await page.locator(`[data-nav="${screen}"]`).click();
+    const select=page.locator('#saved-deck');await select.focus();await select.selectOption('focus-select');await expect(select).toBeFocused();await expect(page.locator('#deck-name')).toHaveValue('Focus select');
+    expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).deck)).toEqual(deck);
+    const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));await select.selectOption('');await expect(select).toBeFocused();await expect(select).toHaveValue('');
+    expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+    await page.evaluate(()=>{window.selectFails=true;const set=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(k==='meme-clash-v1'&&window.selectFails)throw new Error('quota');return set.call(this,k,v);};});
+    await select.selectOption('focus-select');await expect(select).toBeFocused();await expect(select).toHaveValue('');expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+    await page.evaluate(()=>window.selectFails=false);await select.selectOption('focus-select');await expect(select).toBeFocused();
+    await page.keyboard.press('Tab');await expect(page.locator('[data-action="rename-deck"]')).toBeFocused();
+  }
+});
+
+test('deck removal keeps keyboard focus on the same or adjacent row and empty fallback',async({page})=>{
+  const profile=freshProfile(),[a,b,c]=[...new Set(profile.deck)].slice(0,3);profile.deck=[a,a,b,c];profile.decks=[{id:'focus-remove',name:'Focus remove',deck:[...profile.deck]}];
+  await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),profile);await page.goto('/');
+  for(const [screen,width] of [['collection',1440],['workshop',390]]){
+    await page.setViewportSize({width,height:900});await page.locator(`[data-nav="${screen}"]`).click();await page.locator('#saved-deck').selectOption('focus-remove');
+    const first=page.locator(`[data-remove="${a}"]`),saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+    await page.evaluate(()=>{window.removeFails=true;const set=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(k==='meme-clash-v1'&&window.removeFails)throw new Error('quota');return set.call(this,k,v);};});
+    await first.focus();await page.keyboard.press('Enter');await expect(first).toBeFocused();expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);await page.evaluate(()=>window.removeFails=false);
+    await page.keyboard.press('Enter');await expect(first).toBeFocused();expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).deck)).toEqual([a,b,c]);
+    await page.keyboard.press('Enter');await expect(page.locator(`[data-remove="${b}"]`)).toBeFocused();
+    await page.locator(`[data-remove="${c}"]`).focus();await page.keyboard.press('Enter');await expect(page.locator(`[data-remove="${b}"]`)).toBeFocused();
+    await page.keyboard.press('Enter');await expect(page.locator('#deck-name')).toBeFocused();await expect(page.locator('[data-remove]')).toHaveCount(0);
+    const result=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));expect(result.deck).toEqual([]);expect(result.decks).toEqual(profile.decks);expect(()=>parseProfile(result)).not.toThrow();
+  }
+});
+
+test('load more moves keyboard focus to the first newly visible card including the final page',async({page})=>{
+  const profile=freshProfile();profile.custom=Array.from({length:50},(_,i)=>({id:`custom-page-focus-${i}`,name:`Page focus ${i}`,type:'monster',tag:'bonk',cost:1,attack:4,hp:12,speed:5,image:'',flavor:'',effects:[]}));
+  await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),profile);await page.goto('/');await page.locator('[data-nav="collection"]').click();
+  const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  for(const width of [1440,390]){
+    await page.setViewportSize({width,height:900});await page.locator('#origin-filter').selectOption('all');await page.locator('#origin-filter').selectOption('自訂');
+    const cards=page.locator('.catalog-grid [data-card]'),more=page.locator('[data-action="more"]');await expect(cards).toHaveCount(24);
+    await more.focus();await page.keyboard.press('Enter');await expect(cards).toHaveCount(48);await expect(cards.nth(24)).toBeFocused();await expect(cards.nth(24)).toHaveAttribute('data-card','custom-page-focus-24');
+    await page.keyboard.press('Tab');await expect(cards.nth(25)).toBeFocused();
+    await more.focus();await page.keyboard.press('Enter');await expect(cards).toHaveCount(50);await expect(cards.nth(48)).toBeFocused();await expect(more).toHaveCount(0);
+    await page.keyboard.press('Tab');await expect(cards.nth(49)).toBeFocused();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+  }
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+});
+
 test('collection sorts every matching card before pagination without changing saved cards',async({page})=>{
   const profile=freshProfile();profile.custom=Array.from({length:26},(_,i)=>({id:`custom-sort-${i}`,name:i===0?'Sort 10':i===1?'Sort 2':`Z ${i}`,type:'monster',tag:'bonk',cost:i===25?0:1,attack:i,hp:i+10,speed:5,image:'',flavor:'',effects:[]}));
   await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),profile);

@@ -514,7 +514,13 @@ document.addEventListener('click', e => {
     button.setAttribute('aria-pressed',String(favorite));const label=tr(favorite?'取消收藏':'收藏卡牌');button.setAttribute('aria-label',label);button.title=label;
     if(screen==='collection')render();return;
   }
-  if (button.dataset.remove) { const at=profile.deck.indexOf(button.dataset.remove); if(at>=0&&persist({...profile,deck:profile.deck.filter((_,i)=>i!==at)}))render(); return; }
+  if (button.dataset.remove) {
+    const at=profile.deck.indexOf(button.dataset.remove),focused=button===document.activeElement,row=[...app.querySelectorAll('[data-remove]')].indexOf(button);
+    if(at>=0&&persist({...profile,deck:profile.deck.filter((_,i)=>i!==at)})){
+      render();const rows=app.querySelectorAll('[data-remove]');if(focused)(rows[Math.min(row,rows.length-1)]||$('#deck-name')).focus();
+    }
+    return;
+  }
   if (button.dataset.filter) { const focused=button===document.activeElement;filter=button.dataset.filter; visible=24; render();if(focused)$(`[data-filter="${filter}"]`).focus(); return; }
   if (button.dataset.edit) { const card=profile.custom.find(c=>c.id===button.dataset.edit);if(!card)return;editingId=card.id;editSource=JSON.stringify(card);formBase=structuredClone(card);storeCardDraft();modal.close();screen='workshop';render();return; }
   if (button.dataset.template) { const card=displayCard(button.dataset.template);if(!card)return toast('找不到卡牌');editingId='';editSource='';formBase=structuredClone(card);storeCardDraft(); modal.close(); screen='workshop'; render(); return; }
@@ -566,7 +572,7 @@ document.addEventListener('click', e => {
     case 'clash': startClash(); break;
     case 'handoff': handoff=false;modal.close();render();break;
     case 'sound': mute=!mute; sound(); button.innerHTML=icon(mute?'volume-x':'volume-2'); button.setAttribute('aria-label',tr(mute?'開啟音效':'關閉音效'));button.title=tr(mute?'開啟音效':'關閉音效');button.setAttribute('aria-pressed',String(!mute));drawIcons();break;
-    case 'more': visible+=24; render();break;
+    case 'more': {const next=visible,focused=button===document.activeElement;visible+=24;render();if(focused)app.querySelectorAll('.catalog-grid [data-card]')[next]?.focus();break;}
     case 'refresh': void refreshCatalog(button);break;
     case 'export': exportProfile();break;
     case 'recovery': recoveryDialog();break;
@@ -593,9 +599,9 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e=>{
   if(e.target.id==='saved-deck') {
     const saved=profile.decks.find(item=>item.id===e.target.value);
-    if(!saved){savedDeckId='';render();return;}
+    if(!saved){savedDeckId='';render();$('#saved-deck').focus();return;}
     if(!persist({...profile,deck:[...saved.deck]})){e.target.value=savedDeckId;return;}
-    savedDeckId=saved.id;deckName=saved.name;render();
+    savedDeckId=saved.id;deckName=saved.name;render();$('#saved-deck').focus();
   }
   if(e.target.id==='interface-language') {
     const saved=setLocale(e.target.value);regionNames=new Intl.DisplayNames([getLocale()],{type:'region'});
