@@ -606,6 +606,30 @@ test('favorites persist through backup import and deletion without changing deck
   await page.locator(`[data-delete="${card.id}"]`).click();await page.locator('#confirm-delete').click();const deleted=parseProfile(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1'))));expect(deleted.favorites).toEqual([]);expect(deleted.deck).toEqual(profile.deck);await expect(page.locator('.catalog-grid .meme-card')).toHaveCount(0);
 });
 
+test('card details return keyboard focus after favorites redraw or remove the opener',async({page})=>{
+  const profile=freshProfile(),id='custom-focus-favorite';profile.custom=[{id,name:'焦點收藏卡',type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'',effects:[]}];profile.favorites=[id];
+  await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);await page.goto('/');await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');
+  const card=page.locator(`.catalog-grid [data-card="${id}"]`),toggle=page.locator(`[data-favorite="${id}"]`),only=page.getByLabel('只看收藏',{exact:true});
+  for(const width of [1440,390]){
+    await page.setViewportSize({width,height:844});await card.focus();await page.keyboard.press('Enter');await toggle.focus();await page.keyboard.press('Space');await page.keyboard.press('Escape');await expect(card).toBeFocused();
+    await page.keyboard.press('Enter');if(await toggle.getAttribute('aria-pressed')==='false')await toggle.click();await page.getByRole('button',{name:'關閉',exact:true}).click();await expect(card).toBeFocused();
+    await only.check();await card.focus();await page.keyboard.press('Enter');await toggle.focus();await page.keyboard.press('Space');await page.keyboard.press('Escape');await expect(card).toHaveCount(0);await expect(only).toBeFocused();await only.uncheck();
+  }
+});
+
+test('dialog mutations return to live card and deck controls without stealing another focus',async({page})=>{
+  const profile=freshProfile(),id='custom-focus-actions';profile.custom=[{id,name:'焦點操作卡',type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'',effects:[]}];profile.decks=[{id:'focus-deck',name:'焦點卡組',deck:[...profile.deck]}];
+  await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);await page.goto('/');await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');
+  const card=page.locator(`.catalog-grid [data-card="${id}"]`),open=async()=>{await card.focus();await page.keyboard.press('Enter');},remove=async()=>{await open();await page.locator(`[data-delete="${id}"]`).focus();await page.keyboard.press('Space');};
+  await open();await page.locator(`[data-add="${id}"]`).focus();await page.keyboard.press('Space');await expect(card).toBeFocused();expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).deck)).toContain(id);
+  await remove();await page.keyboard.press('Escape');await expect(card).toBeFocused();await remove();await page.getByRole('button',{name:'取消',exact:true}).focus();await page.keyboard.press('Space');await expect(card).toBeFocused();
+  await open();await page.evaluate(()=>{document.querySelector('#modal').close();document.querySelector('#search').focus();});await expect(page.locator('#search')).toBeFocused();
+  await remove();await page.locator('#confirm-delete').focus();await page.keyboard.press('Enter');await expect(card).toHaveCount(0);await expect(page.locator('#favorites-only')).toBeFocused();
+  await page.locator('[data-nav="workshop"]').click();await page.locator('#saved-deck').selectOption('focus-deck');const rename=page.locator('[data-action="rename-deck"]'),drop=page.locator('[data-action="delete-deck"]');
+  await rename.focus();await page.keyboard.press('Enter');await page.locator('#rename-deck-form [name="name"]').fill('改名後');await page.locator('#rename-deck-form [type="submit"]').focus();await page.keyboard.press('Enter');await expect(rename).toBeFocused();
+  await drop.focus();await page.keyboard.press('Enter');await page.keyboard.press('Escape');await expect(drop).toBeFocused();await page.keyboard.press('Enter');await page.locator('#confirm-delete-deck').focus();await page.keyboard.press('Enter');await expect(drop).toBeDisabled();await expect(page.locator('#saved-deck')).toBeFocused();
+});
+
 test('favorite toggles keep hand selections and localized authored names intact',async({page})=>{
   await dragDeck(page);await page.locator('.hand-cards [data-hand]').first().click();await page.locator('[data-action="inspect"]').click();
   const target=page.locator('#play-target'),options=await target.locator('option').count();if(options>1)await target.selectOption({index:options-1});const value=await target.inputValue();

@@ -29,6 +29,7 @@ let game = createGame({ catalog, deck: validDeck() });
 let screen = 'battle', arena, query = '', filter = 'all', origin = 'all', visible = 24, mute = true, audio, counted = false;
 let handoff = false, toastTimer, formBase = loadedDraft.card, editingId = loadedDraft.editingId, editSource = loadedDraft.source, draftFailed = loadedDraft.error;
 let savedDeckId = '', deckName = '';
+let dialogReturn = null;
 let selected = null, dragging = false, cancelDrag;
 let online = null, onlineBusy = false, replaying = false, replayKey = '';
 const network = new MatchClient(receiveOnline, message => {
@@ -267,6 +268,7 @@ function updateBattleHUD() {
   localize($('#scoreboard'));localize($('#battle-log'));localize($('#set-progress'));
 }
 function openDialog(html, className = '') {
+  if(!modal.open){const element=document.activeElement;dialogReturn=app.contains(element)?{screen,element}:null;}
   hideHoverPreview();stopModalPreview?.();stopModalPreview=null;
   if (modal.open) modal.close();
   modal.className = className;
@@ -417,8 +419,19 @@ window.addEventListener('scroll',()=>{
 },true);
 window.addEventListener('resize',hideHoverPreview);
 modal.addEventListener('close',()=>{
+  if(modal.open)return;
   stopModalPreview?.();stopModalPreview=null;$('#modal-preview-stage')?.replaceChildren();
-  if(!modal.open&&$('#interface-language',modal))$('[data-action="appearance"]')?.focus();
+  const origin=dialogReturn;dialogReturn=null;
+  if($('#interface-language',modal)){$('[data-action="appearance"]')?.focus();return;}
+  if(!origin||origin.screen!==screen||app.contains(document.activeElement))return;
+  const opener=origin.element;let target=opener.isConnected?opener:null;
+  if(!target){
+    const key=['card','action','nav','hand'].find(key=>opener.hasAttribute(`data-${key}`));
+    if(opener.id)target=app.querySelector(`#${CSS.escape(opener.id)}`);
+    else if(key)target=app.querySelector(`[data-${key}="${CSS.escape(opener.dataset[key])}"]`);
+  }
+  if(!target||target.disabled)target=opener.hasAttribute('data-card')?$('#favorites-only'):opener.closest('.saved-decks')?$('#saved-deck'):null;
+  target?.focus();
 });
 
 function selectPiece(button) {
