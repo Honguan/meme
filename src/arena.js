@@ -19,7 +19,7 @@ export class Arena {
     const theme = getComputedStyle(document.documentElement);
     this.colors = [theme.getPropertyValue('--accent').trim() || '#d4f75b',theme.getPropertyValue('--pink').trim() || '#fb8aac'];
     this.onEnd = onEnd; this.onUpdate = onUpdate; this.impacts = []; this.running = false;
-    this.last = 0; this.accumulator = 0; this.frame = 0; this.reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this.last = 0; this.accumulator = 0; this.frame = 0; this.motionQuery = matchMedia('(prefers-reduced-motion: reduce)'); this.reduced = this.motionQuery.matches;
     const ratio = Math.min(devicePixelRatio || 1, 2);
     canvas.width = WIDTH * ratio; canvas.height = HEIGHT * ratio;
     this.ctx.scale(ratio, ratio);
@@ -52,6 +52,8 @@ export class Arena {
       this.onUpdate?.(a, b);
   }
   animate(now) {
+    this.reduced = this.motionQuery.matches;
+    if (this.reduced) this.hitStopUntil = this.shakeUntil = 0;
     if (this.replay) {
       const elapsed = now - this.started;
       while (this.replayIndex < this.replay.frames.length && this.replay.frames[this.replayIndex].at <= elapsed) {

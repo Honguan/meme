@@ -1042,6 +1042,49 @@ test('real desktop match animates and finishes a round without console errors',a
   expect(errors).toEqual([]);
 });
 
+test('existing arenas adopt live reduced-motion changes and suppress queued presentation motion',async({page})=>{
+  test.skip(!!process.env.TEST_BASE_URL,'Arena instrumentation requires the managed Vite source server.');
+  await page.emulateMedia({reducedMotion:'no-preference'});await page.goto('/');
+  await page.evaluate(async()=>{
+    const {Arena}=await import('/src/arena.js'),{createGame}=await import('/src/game.js');
+    const game=createGame(),canvas=document.createElement('canvas');game.units=[];game.field='fine';canvas.id='live-motion-arena';canvas.style.width='100%';document.body.append(canvas);
+    window.motionArena=new Arena(canvas,game,()=>{},()=>{});window.motionGame=JSON.stringify(game);
+  });
+  const measure=()=>page.evaluate(()=>{
+    const arena=window.motionArena,now=performance.now();arena.draw(now);const first=arena.ctx.getImageData(0,0,arena.canvas.width,arena.canvas.height).data;
+    arena.draw(now+150);const second=arena.ctx.getImageData(0,0,arena.canvas.width,arena.canvas.height).data;
+    return {moves:first.some((v,i)=>v!==second[i]),nonblank:first.some((v,i)=>i%4===3&&v>0),unchanged:JSON.stringify(arena.game)===window.motionGame};
+  });
+  try{
+    expect(await measure()).toEqual({moves:true,nonblank:true,unchanged:true});
+    await page.evaluate(()=>{window.motionArena.hitStopUntil=window.motionArena.shakeUntil=performance.now()+100000;});
+    await page.emulateMedia({reducedMotion:'reduce'});await expect.poll(()=>page.evaluate(()=>window.motionArena.reduced)).toBe(true);
+    expect(await page.evaluate(()=>[window.motionArena.hitStopUntil,window.motionArena.shakeUntil])).toEqual([0,0]);
+    expect(await measure()).toEqual({moves:false,nonblank:true,unchanged:true});
+    const result=await page.evaluate(()=>{
+      const arena=window.motionArena,source={tag:'bonk'},enemy={tag:'chaos'};
+      arena.presentImpact(550,200,source,enemy,{changes:[{uid:'motion-unit',name:'Motion result',side:0,x:235,y:200,hp:-2,shield:0,ko:true}],traps:[]});
+      arena.draw(performance.now());return {label:arena.canvas.getAttribute('aria-label'),results:arena.impacts.filter(p=>p.kind==='result').length,hitStop:arena.hitStopUntil,shake:arena.shakeUntil};
+    });
+    expect(result).toEqual({label:'迷因對決：Motion result 擊倒 HP -2',results:1,hitStop:0,shake:0});
+    await page.locator('#live-motion-arena').screenshot({path:'.artifacts/live-reduced-motion.png'});
+    await page.emulateMedia({reducedMotion:'no-preference'});await expect.poll(()=>page.evaluate(()=>window.motionArena.reduced)).toBe(false);
+    expect(await measure()).toEqual({moves:true,nonblank:true,unchanged:true});
+    await page.emulateMedia({reducedMotion:'reduce'});await expect.poll(()=>page.evaluate(()=>window.motionArena.reduced)).toBe(true);
+    await page.evaluate(()=>{const arena=window.motionArena;arena.startReplay({units:[],field:'fine',round:arena.game.round,frames:[],duration:100000});window.motionReplay=arena.replay;});
+    await page.emulateMedia({reducedMotion:'no-preference'});await expect.poll(()=>page.evaluate(()=>window.motionArena.reduced)).toBe(false);
+    await page.emulateMedia({reducedMotion:'reduce'});await expect.poll(()=>page.evaluate(()=>window.motionArena.reduced)).toBe(true);
+    expect(await page.evaluate(()=>window.motionArena.running&&window.motionArena.replay===window.motionReplay)).toBe(true);
+  }finally{await page.evaluate(()=>{window.motionArena.destroy();window.motionArena.canvas.remove();delete window.motionArena;delete window.motionGame;delete window.motionReplay;});}
+});
+
+test('live reduced-motion changes keep the current duel canvas and complete its round',async({page})=>{
+  await page.emulateMedia({reducedMotion:'no-preference'});await page.goto('/');const stored=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  await page.getByRole('button',{name:'開始碰撞'}).click();const canvas=await page.locator('#arena').elementHandle();await page.emulateMedia({reducedMotion:'reduce'});expect(await canvas.evaluate(node=>node.isConnected)).toBe(true);
+  await expect(page.locator('#arena')).toHaveAttribute('aria-label',/迷因對決：/,{timeout:12000});await expect(page.locator('#round-number')).toHaveText('02',{timeout:15000});
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);
+});
+
 test('reduced-motion duel still reports impact results and advances the round',async({page})=>{
   await page.emulateMedia({reducedMotion:'reduce'});await page.goto('/');
   await page.getByRole('button',{name:'開始碰撞'}).click();
