@@ -102,6 +102,25 @@ test('discarding a new card draft confirms first and clears only after storage r
   expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(profile);await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(page.locator('#card-form [name="name"]')).toHaveValue('');
 });
 
+test('removing effect rows keeps keyboard focus on the neighboring row or add control',async({page})=>{
+  await page.goto('/');const stored=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));await page.locator('[data-nav="workshop"]').click();
+  const rows=()=>page.locator('#card-form .effect-row'),remove=index=>rows().nth(index).locator('[data-action="remove-effect"]');
+  for(let i=0;i<3;i++)await page.locator('[data-action="add-effect"]').click();
+  await page.locator('#card-form [name="name"]').fill('鍵盤刪除草稿');await page.locator('#card-form [name="hp"]').fill('');
+  for(let i=0;i<4;i++)await rows().nth(i).locator('[name="amount"]').fill(String(i+1));
+  await remove(1).focus();await page.keyboard.press('Enter');await expect(remove(1)).toBeFocused();
+  expect(await rows().locator('[name="amount"]').evaluateAll(inputs=>inputs.map(input=>input.value))).toEqual(['1','3','4']);
+  await page.keyboard.press('Enter');await expect(remove(1)).toBeFocused();
+  expect(await rows().locator('[name="amount"]').evaluateAll(inputs=>inputs.map(input=>input.value))).toEqual(['1','4']);
+  await page.setViewportSize({width:390,height:844});await page.keyboard.press('Enter');await expect(remove(0)).toBeFocused();
+  await page.keyboard.press('Enter');await expect(rows()).toHaveCount(0);await expect(page.locator('[data-action="add-effect"]')).toBeFocused();
+  expect(await page.evaluate(key=>JSON.parse(sessionStorage.getItem(key)).card.effects,DRAFT_KEY)).toEqual([]);
+  await page.keyboard.press('Enter');await expect(rows()).toHaveCount(1);await expect(page.locator('[data-action="add-effect"]')).toBeFocused();
+  await expect(rows().locator('[data-action="effect-up"]')).toBeDisabled();await expect(rows().locator('[data-action="effect-down"]')).toBeDisabled();
+  await expect(page.locator('#card-form [name="hp"]')).toHaveValue('');expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);
+  await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(rows()).toHaveCount(1);await expect(page.locator('#card-form [name="name"]')).toHaveValue('鍵盤刪除草稿');
+});
+
 test('effect order controls preserve incomplete drafts, keyboard focus and translated mobile layouts',async({page})=>{
   await page.goto('/');const stored=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));await page.locator('[data-nav="workshop"]').click();
   const form=()=>page.locator('#card-form'),rows=()=>form().locator('.effect-row');

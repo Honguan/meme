@@ -606,7 +606,11 @@ document.addEventListener('click', e => {
       openDialog(`<div class="dialog-heading"><h2>清除這份草稿？</h2><p>此操作無法還原。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-clear-draft">${icon('trash-2')} 清除草稿</button></div>`,'small-modal');
       $('#confirm-clear-draft').onclick=clearCardDraft;break;
     case 'add-effect': if($('#effect-rows').children.length>=4) toast('最多 4 組效果');else {$('#effect-rows').insertAdjacentHTML('beforeend',effectRow());syncTriggers();syncEffectOrder();formBase=readCardForm($('#card-form'));storeCardDraft();localize($('#effect-rows'));drawIcons();}break;
-    case 'remove-effect': button.closest('.effect-row').remove();syncEffectOrder();formBase=readCardForm($('#card-form'));storeCardDraft();break;
+    case 'remove-effect': {
+      const row=button.closest('.effect-row'),next=row.nextElementSibling||row.previousElementSibling,focused=document.activeElement===button;
+      row.remove();syncEffectOrder();formBase=readCardForm($('#card-form'));storeCardDraft();
+      if(focused)(next?$('[data-action="remove-effect"]',next):$('[data-action="add-effect"]')).focus();break;
+    }
     case 'effect-up': case 'effect-down': {
       const row=button.closest('.effect-row'),up=button.dataset.action==='effect-up',neighbor=up?row.previousElementSibling:row.nextElementSibling;
       if(!neighbor)break;
