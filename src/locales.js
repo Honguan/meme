@@ -200,6 +200,8 @@ const rows = `
 對象|Target|対象|Objetivo
 數值|Amount|数値|Cantidad
 移除此效果|Remove this effect|この効果を削除|Quitar este efecto
+上移效果|Move effect up|効果を上へ移動|Subir efecto
+下移效果|Move effect down|効果を下へ移動|Bajar efecto
 你的梗，你來定義|Your meme. Your rules.|自分のミーム、自分のルール|Tu meme. Tus reglas.
 張自訂卡牌|custom cards|枚のカスタムカード|cartas personalizadas
 卡組流派|Deck styles|デッキタイプ|Estilos de mazo

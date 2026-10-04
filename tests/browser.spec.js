@@ -102,6 +102,57 @@ test('discarding a new card draft confirms first and clears only after storage r
   expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(profile);await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(page.locator('#card-form [name="name"]')).toHaveValue('');
 });
 
+test('effect order controls preserve incomplete drafts, keyboard focus and translated mobile layouts',async({page})=>{
+  await page.goto('/');const stored=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));await page.locator('[data-nav="workshop"]').click();
+  const form=()=>page.locator('#card-form'),rows=()=>form().locator('.effect-row');
+  const read=()=>rows().evaluateAll(rows=>rows.map(row=>Object.fromEntries([...row.querySelectorAll('select,input')].map(input=>[input.name,input.value]))));
+  const boundaries=async()=>{await expect(rows().first().locator('[data-action="effect-up"]')).toBeDisabled();await expect(rows().last().locator('[data-action="effect-down"]')).toBeDisabled();};
+  await boundaries();await expect(rows().locator('[data-action="effect-down"]')).toBeDisabled();
+  await form().locator('[name="name"]').fill('順序草稿');await form().locator('[name="hp"]').fill('');
+  for(let i=0;i<3;i++)await page.locator('[data-action="add-effect"]').click();
+  for(const [i,action]of ['draw','energy','damage','heal'].entries()){await rows().nth(i).locator('[name="action"]').selectOption(action);await rows().nth(i).locator('[name="amount"]').fill(i===2?'':String(i+1));}
+  await rows().last().locator('[name="trigger"]').selectOption('death');const original=await read();
+  const moved=await rows().nth(2).elementHandle();await rows().nth(2).locator('[data-action="effect-up"]').focus();await page.keyboard.press('Enter');
+  expect(await read()).toEqual([original[0],original[2],original[1],original[3]]);expect(await rows().nth(1).evaluate((row,moved)=>row===moved,moved)).toBeTruthy();await expect(rows().nth(1).locator('[data-action="effect-up"]')).toBeFocused();
+  await rows().nth(1).locator('[data-action="effect-down"]').click();await rows().nth(2).locator('[data-action="effect-down"]').click();await boundaries();await expect(rows().last().locator('[data-action="effect-up"]')).toBeFocused();
+  expect(await read()).toEqual([original[0],original[1],original[3],original[2]]);await page.keyboard.press('Enter');expect(await read()).toEqual(original);
+  await page.reload();await page.locator('[data-nav="workshop"]').click();expect(await read()).toEqual(original);await expect(form().locator('[name="hp"]')).toHaveValue('');
+  await expect(rows().locator('.effect-tools button svg')).toHaveCount(12);
+  for(const width of [1440,980,740,390,320]){
+    await page.setViewportSize({width,height:width<=390?844:1080});
+    expect(await rows().evaluateAll(rows=>rows.every(row=>{const outer=row.getBoundingClientRect();return [...row.children,...row.querySelectorAll('.effect-tools button')].every(child=>{const box=child.getBoundingClientRect();return box.left>=outer.left-1&&box.right<=outer.right+1;});}))).toBeTruthy();
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:`.artifacts/effect-order-${width}.png`,fullPage:true});
+  }
+  for(const [locale,up,down]of [['en','Move effect up','Move effect down'],['ja','効果を上へ移動','効果を下へ移動'],['es','Subir efecto','Bajar efecto'],['zh-Hant','上移效果','下移效果']]){
+    await page.locator('[data-action="appearance"]').click();await page.locator('#interface-language').selectOption(locale);await page.keyboard.press('Escape');
+    await expect(rows().first().locator('[data-action="effect-up"]')).toHaveAttribute('title',up);await expect(rows().first().locator('[data-action="effect-up"]')).toHaveAttribute('aria-label',up);await expect(rows().last().locator('[data-action="effect-down"]')).toHaveAttribute('title',down);expect(await read()).toEqual(original);
+  }
+  const draft=await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY);
+  await page.evaluate(key=>{window.orderFails=true;const set=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(k===key&&window.orderFails)throw new Error('quota');return set.call(this,k,v);};},DRAFT_KEY);
+  await rows().nth(1).locator('[data-action="effect-up"]').click();await expect(page.locator('#toast')).toContainText('無法暫存草稿');expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBe(draft);
+  await page.locator('[data-nav="collection"]').click();await page.locator('[data-nav="workshop"]').click();expect(await read()).toEqual([original[1],original[0],original[2],original[3]]);
+  await page.evaluate(()=>window.orderFails=false);await rows().first().locator('[data-action="effect-down"]').click();await page.reload();await page.locator('[data-nav="workshop"]').click();expect(await read()).toEqual(original);
+  for(let i=0;i<3;i++)await rows().last().locator('[data-action="remove-effect"]').click();await boundaries();await rows().first().locator('[data-action="remove-effect"]').click();await expect(rows()).toHaveCount(0);
+  await page.locator('[data-action="add-effect"]').click();await boundaries();expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);
+});
+
+test('reordered card effects survive creation, backup and editing with their actual execution order',async({page})=>{
+  await page.goto('/');await page.locator('[data-nav="workshop"]').click();const rows=()=>page.locator('#card-form .effect-row');
+  await page.locator('#card-form [name="name"]').fill('先回復後傷害');await page.locator('#card-form [name="type"]').selectOption('spell');
+  const effects=[{trigger:'play',action:'damage',target:'enemy',amount:10},{trigger:'play',action:'heal',target:'enemy',amount:4},{trigger:'play',action:'energy',target:'self',amount:1},{trigger:'play',action:'draw',target:'self',amount:1}];
+  for(const [i,effect]of effects.entries()){if(i)await page.locator('[data-action="add-effect"]').click();await rows().nth(i).locator('[name="action"]').selectOption(effect.action);await rows().nth(i).locator('[name="target"]').selectOption(effect.target);await rows().nth(i).locator('[name="amount"]').fill(String(effect.amount));}
+  await rows().nth(1).locator('[data-action="effect-up"]').click();await page.locator('#card-form [type="submit"]').click();await expect(page.locator('#toast')).toContainText('先回復後傷害');
+  const profile=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1'))),card=profile.custom.at(-1),ordered=[effects[1],effects[0],effects[2],effects[3]];expect(card.effects).toEqual(ordered);
+  const {previewGame}=await import('../src/preview.js'),{playCard}=await import('../src/game.js');
+  const result=card=>{const g=previewGame(card),enemy=g.units.find(u=>u.side===1);expect(playCard(g,0,0,enemy.uid).ok).toBeTruthy();return enemy.hp;};expect(result(card)).toBe(25);
+  await page.locator(`.catalog-grid [data-card="${card.id}"]`).click();await page.locator('[data-preview]').click();await expect(page.locator('[data-preview-status]')).toContainText('手牌 1');await expect(page.locator('[data-preview-status]')).toContainText('能量 4');await page.keyboard.press('Escape');
+  const download=page.waitForEvent('download');await page.locator('[data-action="export"]').click();const stream=await(await download).createReadStream(),chunks=[];for await(const chunk of stream)chunks.push(chunk);
+  expect(parseProfile(JSON.parse(Buffer.concat(chunks).toString('utf8'))).custom.at(-1).effects).toEqual(ordered);
+  await page.locator(`.catalog-grid [data-card="${card.id}"]`).click();await page.locator(`[data-edit="${card.id}"]`).click();await rows().first().locator('[data-action="effect-down"]').click();await page.locator('#card-form [type="submit"]').click();
+  const updated=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));expect(updated.custom).toHaveLength(profile.custom.length);expect(updated.custom.at(-1).id).toBe(card.id);expect(updated.custom.at(-1).effects).toEqual(effects);expect(updated.deck).toEqual(profile.deck);expect(result(updated.custom.at(-1))).toBe(29);
+  await page.reload();await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');await page.locator(`.catalog-grid [data-card="${card.id}"]`).click();await page.locator(`[data-edit="${card.id}"]`).click();expect(await rows().locator('[name="action"]').evaluateAll(inputs=>inputs.map(input=>input.value))).toEqual(effects.map(effect=>effect.action));
+});
+
 test('card drafts restore blank values and zero effects after reload without touching profiles',async({page,context})=>{
   await page.goto('/');const stored=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
   await page.locator('[data-nav="workshop"]').click();

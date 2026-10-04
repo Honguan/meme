@@ -1,4 +1,4 @@
-import { createIcons, Swords, Layers, Hammer, Search, SlidersHorizontal, ArrowUpRight, ArrowRight, ArrowLeft, Plus, Minus, X, Zap, Shield, Heart, Sparkles, Volume2, VolumeX, RotateCcw, Github, Download, Upload, RefreshCw, Trash2, Check, ChevronRight, Target, Flame, Trophy, Palette, Save, Pencil, Star } from 'lucide';
+import { createIcons, Swords, Layers, Hammer, Search, SlidersHorizontal, ArrowUpRight, ArrowRight, ArrowLeft, ArrowUp, ArrowDown, Plus, Minus, X, Zap, Shield, Heart, Sparkles, Volume2, VolumeX, RotateCcw, Github, Download, Upload, RefreshCw, Trash2, Check, ChevronRight, Target, Flame, Trophy, Palette, Save, Pencil, Star } from 'lucide';
 import { CATALOG, TYPES, TAGS, FIELDS, ACTIONS, TARGETS, TRIGGERS, PRESETS, WORLD_COVERAGE, templateCards, validateCustom, effectText } from './catalog.js';
 import { ARCHETYPES } from './semantics.js';
 import { createGame, createDailyGame, randomWorldDeck, playCard, playError, units, combos, planAI, finishRound, isUnit, moveUnit } from './game.js';
@@ -13,7 +13,7 @@ import { loadDraft, saveDraft } from './draft.js';
 import './style.css';
 import './duel.css';
 
-const icons = { Swords, Layers, Hammer, Search, SlidersHorizontal, ArrowUpRight, ArrowRight, ArrowLeft, Plus, Minus, X, Zap, Shield, Heart, Sparkles, Volume2, VolumeX, RotateCcw, Github, Download, Upload, RefreshCw, Trash2, Check, ChevronRight, Target, Flame, Trophy, Palette, Save, Pencil, Star };
+const icons = { Swords, Layers, Hammer, Search, SlidersHorizontal, ArrowUpRight, ArrowRight, ArrowLeft, ArrowUp, ArrowDown, Plus, Minus, X, Zap, Shield, Heart, Sparkles, Volume2, VolumeX, RotateCcw, Github, Download, Upload, RefreshCw, Trash2, Check, ChevronRight, Target, Flame, Trophy, Palette, Save, Pencil, Star };
 document.documentElement.dataset.theme=loadTheme();
 const $ = (s, root = document) => root.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -241,7 +241,11 @@ function deckSidebar() {
   return `<aside class="deck-sidebar"><div class="aside-title"><h2>我的卡組</h2><b class="deck-count ${profile.deck.length<10?'warning':''}">${profile.deck.length}<small>/30</small></b></div>${savedControls}<div class="deck-list">${[...count].map(([id,n])=>{const c=catalog.find(c=>c.id===id);return c?`<div class="deck-row">${image(c)}<span><b>${esc(c.name)}</b><small>${TYPES[c.type]} · ${c.cost} 能量</small></span><b>×${n}</b><button class="icon-button small" data-remove="${esc(id)}" title="移除一張" aria-label="移除 ${esc(c.name)}">${icon('minus')}</button></div>`:'';}).join('')||'<p class="empty-state">尚未加入卡牌</p>'}</div><button class="primary-button" data-action="new">${icon('swords')} 使用卡組對決</button><div class="deck-tools"><button class="quiet-button" data-action="export">${icon('download')} 匯出</button><button class="quiet-button" data-action="import">${icon('upload')} 匯入</button></div></aside>`;
 }
 function effectRow(value = { trigger: 'play', action: 'shield', target: 'self', amount: 3 }) {
-  return `<div class="effect-row"><label>時機<select name="trigger">${Object.entries(TRIGGERS).map(([key,name])=>`<option value="${key}" ${key===value.trigger?'selected':''}>${name}</option>`).join('')}</select></label><label>效果<select name="action">${Object.entries(ACTIONS).map(([key,name])=>`<option value="${key}" ${key===value.action?'selected':''}>${name}</option>`).join('')}</select></label><label>對象<select name="target">${Object.entries(TARGETS).map(([key,name])=>`<option value="${key}" ${key===value.target?'selected':''}>${name}</option>`).join('')}</select></label><label>數值<input name="amount" type="number" min="1" max="99" value="${esc(value.amount)}" required></label><button class="icon-button" type="button" data-action="remove-effect" aria-label="移除此效果" title="移除此效果">${icon('x')}</button></div>`;
+  return `<div class="effect-row"><label>時機<select name="trigger">${Object.entries(TRIGGERS).map(([key,name])=>`<option value="${key}" ${key===value.trigger?'selected':''}>${name}</option>`).join('')}</select></label><label>效果<select name="action">${Object.entries(ACTIONS).map(([key,name])=>`<option value="${key}" ${key===value.action?'selected':''}>${name}</option>`).join('')}</select></label><label>對象<select name="target">${Object.entries(TARGETS).map(([key,name])=>`<option value="${key}" ${key===value.target?'selected':''}>${name}</option>`).join('')}</select></label><label>數值<input name="amount" type="number" min="1" max="99" value="${esc(value.amount)}" required></label><div class="effect-tools"><button class="icon-button" type="button" data-action="effect-up" aria-label="上移效果" title="上移效果">${icon('arrow-up')}</button><button class="icon-button" type="button" data-action="effect-down" aria-label="下移效果" title="下移效果">${icon('arrow-down')}</button><button class="icon-button" type="button" data-action="remove-effect" aria-label="移除此效果" title="移除此效果">${icon('x')}</button></div></div>`;
+}
+function syncEffectOrder() {
+  const rows=[...$('#effect-rows').children];
+  rows.forEach((row,index)=>{ $('[data-action="effect-up"]',row).disabled=index===0; $('[data-action="effect-down"]',row).disabled=index===rows.length-1; });
 }
 function readCardForm(form) {
   const data=Object.fromEntries(new FormData(form));
@@ -270,7 +274,7 @@ function render() {
     if(!canPlay())for(const button of app.querySelectorAll('[data-hand],[data-drop]'))button.disabled=true;
   }
   if (screen === 'battle') arena = new Arena($('#arena'), game, battleDone, () => { sound('hit'); updateBattleHUD(); });
-  if (screen === 'workshop') syncTriggers();
+  if (screen === 'workshop') { syncTriggers();syncEffectOrder(); }
   localize(app);
 }
 function updateBattleHUD() {
@@ -601,8 +605,15 @@ document.addEventListener('click', e => {
     case 'clear-draft':
       openDialog(`<div class="dialog-heading"><h2>清除這份草稿？</h2><p>此操作無法還原。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-clear-draft">${icon('trash-2')} 清除草稿</button></div>`,'small-modal');
       $('#confirm-clear-draft').onclick=clearCardDraft;break;
-    case 'add-effect': if($('#effect-rows').children.length>=4) toast('最多 4 組效果');else {$('#effect-rows').insertAdjacentHTML('beforeend',effectRow());syncTriggers();formBase=readCardForm($('#card-form'));storeCardDraft();localize($('#effect-rows'));drawIcons();}break;
-    case 'remove-effect': button.closest('.effect-row').remove();formBase=readCardForm($('#card-form'));storeCardDraft();break;
+    case 'add-effect': if($('#effect-rows').children.length>=4) toast('最多 4 組效果');else {$('#effect-rows').insertAdjacentHTML('beforeend',effectRow());syncTriggers();syncEffectOrder();formBase=readCardForm($('#card-form'));storeCardDraft();localize($('#effect-rows'));drawIcons();}break;
+    case 'remove-effect': button.closest('.effect-row').remove();syncEffectOrder();formBase=readCardForm($('#card-form'));storeCardDraft();break;
+    case 'effect-up': case 'effect-down': {
+      const row=button.closest('.effect-row'),up=button.dataset.action==='effect-up',neighbor=up?row.previousElementSibling:row.nextElementSibling;
+      if(!neighbor)break;
+      if(up)neighbor.before(row);else neighbor.after(row);
+      syncEffectOrder();formBase=readCardForm($('#card-form'));storeCardDraft();
+      (button.disabled?$(`[data-action="${up?'effect-down':'effect-up'}"]`,row):button).focus();break;
+    }
   }
 });
 function updateSearch(input) {
