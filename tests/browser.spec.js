@@ -1,8 +1,42 @@
 import { test, expect } from '@playwright/test';
 import { freshProfile, parseProfile } from '../src/storage.js';
-import { CATALOG } from '../src/catalog.js';
+import { CATALOG, TAGS, templateCards } from '../src/catalog.js';
 import { DRAFT_KEY } from '../src/draft.js';
 import { createGame } from '../src/game.js';
+
+test('faction filters compose before pagination and preserve drafts across locales and layouts',async({page},testInfo)=>{
+  const profile=freshProfile(),card={type:'monster',cost:1,hp:20,speed:5,image:'',flavor:'',effects:[],origin:'自訂'};
+  profile.custom=[...Array.from({length:26},(_,i)=>({...card,id:`custom-faction-${i}`,name:`Faction ${i}`,tag:'bonk',attack:i})),...Object.keys(TAGS).filter(tag=>tag!=='bonk').map(tag=>({...card,id:`custom-faction-${tag}`,name:`Faction ${tag}`,tag,attack:1}))];
+  profile.favorites=['custom-faction-25','custom-faction-chaos'];
+  const catalog=[...new Map([...CATALOG,...templateCards(profile.web),...profile.custom].map(c=>[c.id,c])).values()],errors=[];
+  page.on('pageerror',error=>errors.push(error.message));await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);await page.goto('/');
+  const raw=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));await page.locator('[data-nav="workshop"]').click();await page.locator('#card-form [name="name"]').fill('未完成的陣營創作');await page.locator('#card-form [name="hp"]').fill('');
+  const draft=await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY);await page.locator('[data-nav="collection"]').click();
+  const shown=()=>page.locator('.catalog-grid [data-card]').evaluateAll(cards=>cards.map(c=>c.dataset.card));
+  for(const tag of Object.keys(TAGS)){
+    await page.locator('#tag-filter').selectOption(tag);await expect(page.locator('#tag-filter')).toBeFocused();
+    const expected=catalog.filter(c=>c.tag===tag);expect(await shown()).toEqual(expected.slice(0,24).map(c=>c.id));await expect(page.locator('.results-heading>span')).toHaveText(`${expected.length} 張卡牌`);
+  }
+  const global=catalog.find(c=>c.origin==='全球'&&c.languages.includes('eng')&&c.countries.length&&c.archetype);
+  expect(global).toBeTruthy();await page.locator('#origin-filter').selectOption('全球');await page.locator('#tag-filter').selectOption(global.tag);await page.locator('#language-filter').selectOption('eng');await page.locator('#country-filter').selectOption(global.countries[0]);await page.locator('#ability-filter').selectOption(global.archetype);
+  const combined=catalog.filter(c=>c.origin==='全球'&&c.tag===global.tag&&c.languages?.includes('eng')&&c.countries?.includes(global.countries[0])&&c.archetype===global.archetype);
+  expect(await shown()).toEqual(combined.slice(0,24).map(c=>c.id));await expect(page.locator('.results-heading>span')).toHaveText(`${combined.length} 張卡牌`);
+  for(const id of ['language-filter','country-filter','ability-filter'])await page.locator(`#${id}`).selectOption('all');
+  await page.locator('#origin-filter').selectOption('自訂');await page.locator('#tag-filter').selectOption('bonk');await page.locator('#sort-order').selectOption('attack');
+  expect((await shown())[0]).toBe('custom-faction-25');await expect(page.locator('.catalog-grid [data-card]')).toHaveCount(24);await page.locator('[data-action="more"]').click();await expect(page.locator('.catalog-grid [data-card]')).toHaveCount(26);
+  await page.locator('#tag-filter').selectOption('chaos');expect(await shown()).toEqual(['custom-faction-chaos']);await page.locator('#tag-filter').selectOption('bonk');await expect(page.locator('.catalog-grid [data-card]')).toHaveCount(24);
+  await page.locator('#favorites-only').check();expect(await shown()).toEqual(['custom-faction-25']);await page.locator('#search').fill('not-a-faction-card');await expect(page.locator('.results-heading>span')).toHaveText('0 張卡牌');expect(await shown()).toEqual([]);
+  await page.locator('#search').fill('');await page.locator('[data-filter="spell"]').click();expect(await shown()).toEqual([]);await page.locator('[data-filter="all"]').click();await page.locator('#favorites-only').uncheck();
+  for(const [locale,label,all] of [['en','Faction','All factions'],['ja','陣営','すべての陣営'],['es','Facción','Todas las facciones'],['zh-Hant','陣營','所有陣營']]){
+    await page.locator('[data-action="appearance"]').click();await page.locator('#interface-language').selectOption(locale);await page.keyboard.press('Escape');
+    await expect(page.locator('#tag-filter')).toHaveAccessibleName(label);await expect(page.locator('#tag-filter')).toHaveValue('bonk');await expect(page.locator('#tag-filter option[value="all"]')).toHaveText(all);
+    for(const width of [1440,390,320]){await page.setViewportSize({width,height:900});expect(await page.locator('#tag-filter').evaluate(el=>el.getBoundingClientRect().left>=0&&el.getBoundingClientRect().right<=innerWidth&&document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();}
+  }
+  await page.screenshot({path:`.artifacts/faction-filter-${testInfo.project.name}-mobile.png`,fullPage:true});
+  await page.locator('[data-nav="workshop"]').click();await expect(page.locator('#card-form [name="name"]')).toHaveValue('未完成的陣營創作');await expect(page.locator('#card-form [name="hp"]')).toHaveValue('');await page.locator('[data-nav="collection"]').click();await expect(page.locator('#tag-filter')).toHaveValue('bonk');
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(raw);expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBe(draft);expect(errors).toEqual([]);
+  await page.reload();await page.locator('[data-nav="collection"]').click();await expect(page.locator('#tag-filter')).toHaveValue('all');
+});
 
 test('saved deck restore confirms edits, keeps card drafts and focuses the restored control across locales and layouts',async({page},testInfo)=>{
   const profile=freshProfile(),card={id:'custom-restore',name:'生命值 角色',type:'monster',tag:'brain',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'保留創作',effects:[],origin:'自訂'};
@@ -644,7 +678,7 @@ test('collection filters retain focus after redraw for continued keyboard naviga
   const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
   for(const width of [1440,390]){
     await page.setViewportSize({width,height:900});
-    for(const id of ['origin-filter','language-filter','country-filter','ability-filter','sort-order']){
+    for(const id of ['origin-filter','language-filter','country-filter','ability-filter','tag-filter','sort-order']){
       const control=page.locator(`#${id}`),value=await control.locator('option').nth(1).getAttribute('value');
       await control.focus();await control.selectOption(value);await expect(control).toBeFocused();await expect(control).toHaveValue(value);
       await page.keyboard.press('Tab');await expect(control).not.toBeFocused();

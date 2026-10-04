@@ -192,6 +192,7 @@ const rows = `
 未標註|Unspecified|未記載|Sin especificar
 梗意能力|Meme ability|ミーム能力|Habilidad del meme
 所有能力|All abilities|すべての能力|Todas las habilidades
+所有陣營|All factions|すべての陣営|Todas las facciones
 張卡牌|cards|枚のカード|cartas
 沒有符合條件的卡牌。|No matching cards.|一致するカードがありません。|No hay cartas que coincidan.
 載入更多|Load more|さらに表示|Cargar más
