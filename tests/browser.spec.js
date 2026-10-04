@@ -4,6 +4,25 @@ import { CATALOG, TAGS, templateCards } from '../src/catalog.js';
 import { DRAFT_KEY } from '../src/draft.js';
 import { createGame } from '../src/game.js';
 
+test('successful creation and edits clear hiding filters only after the card save succeeds',async({page})=>{
+  const profile=freshProfile(),source={id:'custom-filter-edit',name:'原始暴擊角色',type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'',effects:[],origin:'自訂'};profile.custom=[source];profile.favorites=[source.id];profile.decks=[{id:'filter-saved',name:'保留卡組',deck:[source.id]}];profile.stats={wins:3,losses:2,games:5};
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),profile);await page.goto('/');
+  await page.evaluate(()=>{const set=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){if(key==='meme-clash-v1'&&window.failCardSave)throw new DOMException('full','QuotaExceededError');return set.call(this,key,value);};});
+  for(const [action,width] of [['create',1440],['edit',390]]){
+    await page.setViewportSize({width,height:900});await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');await page.locator('#tag-filter').selectOption('bonk');await page.locator('#favorites-only').check();await page.locator('#sort-order').selectOption('hp');
+    if(action==='edit'){await page.locator(`[data-card="${source.id}"]`).click();await page.locator('[data-edit]').click();}else await page.locator('[data-nav="workshop"]').click();
+    await page.locator('#card-form [name="name"]').fill(`保存後可見 ${action}`);await page.locator('#card-form [name="tag"]').selectOption('chaos');
+    const raw=await page.evaluate(()=>localStorage.getItem('meme-clash-v1')),draft=await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY);await page.evaluate(()=>window.failCardSave=true);await page.locator('#card-form button[type="submit"]').click();
+    await expect(page.locator('#card-form')).toBeVisible();expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(raw);expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBe(draft);
+    await page.locator('[data-nav="collection"]').click();await expect(page.locator('#tag-filter')).toHaveValue('bonk');await expect(page.locator('#favorites-only')).toBeChecked();await page.locator('[data-nav="workshop"]').click();await expect(page.locator('#card-form [name="name"]')).toHaveValue(`保存後可見 ${action}`);
+    await page.evaluate(()=>window.failCardSave=false);await page.locator('#card-form button[type="submit"]').click();await expect(page.locator('#origin-filter')).toHaveValue('自訂');await expect(page.locator('#tag-filter')).toHaveValue('all');await expect(page.locator('#favorites-only')).not.toBeChecked();await expect(page.locator('#sort-order')).toHaveValue('hp');
+    const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1'))),card=saved.custom.find(c=>c.name===`保存後可見 ${action}`);expect(card.tag).toBe('chaos');if(action==='edit')expect(card.id).toBe(source.id);else expect(card.id).not.toBe(source.id);
+    await expect(page.locator(`[data-card="${card.id}"]`)).toBeVisible();for(const key of ['deck','decks','favorites','stats','web'])expect(saved[key]).toEqual(profile[key]);expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBeNull();
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+  }
+  expect(errors).toEqual([]);
+});
+
 test('collection resets all filters without resetting sort, saved cards or workshop drafts',async({page},testInfo)=>{
   const profile=freshProfile();profile.custom=Array.from({length:26},(_,i)=>({id:`custom-reset-${i}`,name:`Reset ${i}`,type:'monster',tag:'bonk',cost:1,attack:i,hp:20,speed:5,image:'',flavor:'',effects:[],origin:'自訂'}));profile.favorites=[profile.custom[0].id];
   const catalog=[...new Map([...CATALOG,...templateCards(profile.web),...profile.custom].map(c=>[c.id,c])).values()],global=catalog.find(c=>c.origin==='全球'&&c.languages.includes('eng')&&c.countries.length&&c.archetype),errors=[];

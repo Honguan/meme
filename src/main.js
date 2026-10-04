@@ -720,7 +720,7 @@ document.addEventListener('submit', e=>{
       const card=validateCustom(data);if(edited)card.id=editingId;
       const custom=edited?profile.custom.map(c=>c.id===editingId?card:c):[...profile.custom,card];
       if(!persist({...profile,custom}))return;
-      editingId='';editSource='';formBase=null;const cleared=storeCardDraft();screen='collection';origin='自訂';filter='all';sourceLanguage='all';sourceCountry='all';ability='all';query='';render();toast(cleared?(edited?'卡牌已保存':`已鑄造「${card.name}」`):'卡牌已保存，但無法清除暫存草稿');
+      editingId='';editSource='';formBase=null;const cleared=storeCardDraft();screen='collection';origin='自訂';filter='all';sourceLanguage='all';sourceCountry='all';ability='all';tagFilter='all';favoritesOnly=false;query='';render();toast(cleared?(edited?'卡牌已保存':`已鑄造「${card.name}」`):'卡牌已保存，但無法清除暫存草稿');
     } catch(error) {$('#form-error').textContent=tr(error.message);}
   }
 });
