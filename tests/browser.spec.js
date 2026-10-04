@@ -61,6 +61,31 @@ test('arena image cache stays bounded while reusing active art and reloading evi
   expect(result.size).toBeLessThanOrEqual(128);expect(result.finalSize).toBeLessThanOrEqual(128);expect(result.hotReused).toBeTruthy();expect(result.oldestEvicted).toBeTruthy();expect(result.reloaded).toBeTruthy();expect(result.pixel).toEqual([255,0,0,255]);
 });
 
+for(const action of ['edit','template'])test(`starting another ${action} draft confirms replacement and preserves the current draft on failed writes`,async({page})=>{
+  const profile=freshProfile(),card={id:'custom-draft-switch',name:'來源角色',type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'來源宣言',effects:[]};profile.custom=[card];
+  await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),profile);await page.goto('/');
+  if(action==='template')await page.setViewportSize({width:390,height:844});
+  await page.locator('[data-nav="workshop"]').click();await page.locator('#card-form [name="name"]').fill('未保存創作');await page.locator('#card-form [name="flavor"]').fill('不要丟掉這段台詞');
+  const stored=await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY),saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  const open=async()=>{await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');await page.locator(`[data-card="${card.id}"]`).click();await page.locator(`[data-${action}="${card.id}"]`).click();};
+  await open();await expect(page.locator('#modal h2')).toHaveText('取代目前草稿？');expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();if(action==='template')await page.screenshot({path:'.artifacts/replace-draft-mobile.png'});await page.getByRole('button',{name:'取消',exact:true}).click();
+  expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBe(stored);
+  await page.locator('[data-nav="workshop"]').click();await expect(page.locator('#card-form [name="name"]')).toHaveValue('未保存創作');await expect(page.locator('#card-form [name="flavor"]')).toHaveValue('不要丟掉這段台詞');
+  await open();await page.evaluate(key=>{const set=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(this===sessionStorage&&k===key&&window.failDraftSwitch)throw new DOMException('full','QuotaExceededError');return set.call(this,k,v);};window.failDraftSwitch=true;},DRAFT_KEY);
+  await page.locator('#confirm-replace-draft').click();await expect(page.locator('#confirm-replace-draft')).toBeVisible();expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBe(stored);
+  await page.evaluate(()=>window.failDraftSwitch=false);await page.locator('#confirm-replace-draft').click();await expect(page.locator('#card-form [name="name"]')).toHaveValue(card.name);
+  const draft=await page.evaluate(key=>JSON.parse(sessionStorage.getItem(key)),DRAFT_KEY);expect(draft.editingId).toBe(action==='edit'?card.id:'');expect(draft.card.name).toBe(card.name);expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+});
+test('reopening the same card resumes its edit draft and cancelling edits requires confirmation',async({page})=>{
+  const profile=freshProfile(),card={id:'custom-edit-resume',name:'原始角色',type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'',effects:[]};profile.custom=[card];
+  await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),profile);await page.goto('/');const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  const edit=async()=>{await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');await page.locator(`[data-card="${card.id}"]`).click();await page.locator(`[data-edit="${card.id}"]`).click();};
+  await edit();await page.locator('#card-form [name="name"]').fill('編輯尚未保存');const stored=await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY);
+  await edit();await expect(page.locator('#card-form [name="name"]')).toHaveValue('編輯尚未保存');expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBe(stored);
+  await page.locator('[data-action="cancel-edit"]').click();await expect(page.locator('#modal h2')).toHaveText('清除這份草稿？');await page.getByRole('button',{name:'取消',exact:true}).click();await expect(page.locator('#card-form [name="name"]')).toHaveValue('編輯尚未保存');
+  await page.locator('[data-action="cancel-edit"]').click();await page.locator('#confirm-clear-draft').click();await expect(page.locator('#card-form [name="name"]')).toHaveValue('');expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBeNull();
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+});
 test('discarding a new card draft confirms first and clears only after storage removal succeeds',async({page})=>{
   await page.goto('/');await page.locator('[data-nav="workshop"]').click();
   await page.locator('#card-form [name="name"]').fill('準備放棄的草稿');await page.locator('#card-form [name="hp"]').fill('');
@@ -101,14 +126,14 @@ test('edit drafts restore only unchanged source cards and never overwrite change
   const profile=freshProfile(),original={id:'custom-reload-edit',name:'原始角色',type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'原始宣言',effects:[]};profile.custom=[original];
   await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);
   const form=()=>page.locator('#card-form');
-  const edit=async()=>{await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');await page.locator(`[data-card="${original.id}"]`).click();await page.locator(`[data-edit="${original.id}"]`).click();};
+  const edit=async()=>{await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');await page.locator(`[data-card="${original.id}"]`).click();await page.locator(`[data-edit="${original.id}"]`).click();if(await page.locator('#confirm-replace-draft').isVisible())await page.locator('#confirm-replace-draft').click();};
   await page.goto('/');await edit();const stored=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
   await form().locator('[name="name"]').fill('保留編輯');await form().locator('[name="hp"]').fill('');
   await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(page.getByRole('heading',{name:'編輯卡牌',exact:true})).toBeVisible();
   await expect(form().locator('[name="name"]')).toHaveValue('保留編輯');await expect(form().locator('[name="hp"]')).toHaveValue('');expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);
   await form().locator('[name="hp"]').fill('24');await form().locator('[type="submit"]').click();
   expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).custom.map(c=>c.id))).toEqual([original.id]);expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBeNull();
-  await edit();await form().locator('[name="name"]').fill('取消內容');await page.locator('[data-action="cancel-edit"]').click();
+  await edit();await form().locator('[name="name"]').fill('取消內容');await page.locator('[data-action="cancel-edit"]').click();await page.locator('#confirm-clear-draft').click();
   await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(form().locator('[name="name"]')).toHaveValue('');expect(await page.evaluate(key=>sessionStorage.getItem(key),DRAFT_KEY)).toBeNull();
   await edit();await form().locator('[name="name"]').fill('匯入前草稿');
   const incoming=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));incoming.custom[0].name='匯入的新版本';
@@ -135,10 +160,10 @@ test('draft storage failures preserve editor memory and malformed drafts remain 
   await page.locator('#card-form [type="submit"]').click();const id=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')).custom[0].id);
   await page.locator(`[data-card="${id}"]`).click();await page.locator(`[data-edit="${id}"]`).click();
   await page.evaluate(key=>{const set=Storage.prototype.setItem,remove=Storage.prototype.removeItem;Storage.prototype.setItem=function(k,v){if(k===key)throw new Error('quota');return set.call(this,k,v);};Storage.prototype.removeItem=function(k){if(k===key)throw new Error('denied');return remove.call(this,k);};},DRAFT_KEY);
-  await page.locator('#card-form [name="name"]').fill('取消失敗的編輯');await expect(page.locator('#toast')).toContainText('無法暫存草稿');await page.locator('[data-action="cancel-edit"]').click();await expect(page.locator('#toast')).toContainText('無法清除暫存草稿');
+  await page.locator('#card-form [name="name"]').fill('取消失敗的編輯');await expect(page.locator('#toast')).toContainText('無法暫存草稿');await page.locator('[data-action="cancel-edit"]').click();await page.locator('#confirm-clear-draft').click();await expect(page.locator('#toast')).toContainText('無法清除暫存草稿');
   await expect(page.getByRole('heading',{name:'編輯卡牌',exact:true})).toBeVisible();await expect(page.locator('#card-form [name="name"]')).toHaveValue('取消失敗的編輯');
   await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(page.getByRole('heading',{name:'編輯卡牌',exact:true})).toBeVisible();await expect(page.locator('#card-form [name="name"]')).toHaveValue('再次暫存');
-  await page.locator('[data-action="cancel-edit"]').click();await page.locator('#card-form [name="name"]').fill('不可信輸入');
+  await page.locator('[data-action="cancel-edit"]').click();await page.locator('#confirm-clear-draft').click();await page.locator('#card-form [name="name"]').fill('不可信輸入');
   await page.evaluate(key=>{const draft=JSON.parse(sessionStorage.getItem(key));draft.card.cost=draft.card.speed=draft.card.attack=draft.card.hp=draft.card.effects[0].amount='" onfocus="window.injected=1';sessionStorage.setItem(key,JSON.stringify(draft));},DRAFT_KEY);
   await page.reload();await page.locator('[data-nav="workshop"]').click();expect(await page.locator('#card-form [onfocus]').count()).toBe(0);expect(await page.evaluate(()=>window.injected)).toBeUndefined();
   await page.evaluate(key=>sessionStorage.setItem(key,'{broken'),DRAFT_KEY);await page.reload();await expect(page.locator('#toast')).toContainText('無法讀取暫存草稿');await page.locator('[data-nav="workshop"]').click();await expect(page.locator('#card-form [name="name"]')).toHaveValue('');
@@ -787,7 +812,7 @@ test('custom card limit rejects creation but permits in-place edits without chan
   await page.goto('/');await page.locator('[data-nav="workshop"]').click();const stored=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
   await page.getByLabel('卡牌名稱',{exact:true}).fill('超額卡牌');await page.getByRole('button',{name:'鑄造卡牌',exact:true}).click();
   await expect(page.locator('#form-error')).toHaveText('最多保存 1000 張自訂卡牌');expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(stored);
-  await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');await page.locator('[data-card="custom-limit-0"]').click();await page.locator('[data-edit="custom-limit-0"]').click();
+  await page.locator('[data-nav="collection"]').click();await page.locator('#origin-filter').selectOption('自訂');await page.locator('[data-card="custom-limit-0"]').click();await page.locator('[data-edit="custom-limit-0"]').click();await page.locator('#confirm-replace-draft').click();
   await expect(page.getByRole('heading',{name:'編輯卡牌',exact:true})).toBeVisible();await page.getByLabel('卡牌名稱',{exact:true}).fill('Updated original');await page.locator('#card-form [name="attack"]').fill('7');
   await page.locator('[data-action="add-effect"]').click();await page.locator('[data-action="appearance"]').click();await page.locator('#interface-language').selectOption('en');await page.keyboard.press('Escape');
   await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:'.artifacts/card-edit-mobile.png',fullPage:true});
@@ -797,13 +822,13 @@ test('custom card limit rejects creation but permits in-place edits without chan
   await page.evaluate(()=>window.storageFails=false);await page.locator('#card-form [type="submit"]').click();
   const edited=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));expect(edited.custom).toHaveLength(1000);expect(edited.custom[0]).toMatchObject({id:'custom-limit-0',name:'Updated original',attack:7});expect(edited.custom[0].effects).toHaveLength(1);
   expect(edited.deck).toEqual(profile.deck);expect(edited.decks).toEqual(profile.decks);expect(edited.custom.slice(1)).toEqual(parseProfile(profile).custom.slice(1));
-  await page.locator('[data-card="custom-limit-0"]').click();await page.locator('[data-edit="custom-limit-0"]').click();await page.locator('[data-action="cancel-edit"]').click();await expect(page.locator('#card-form [name="name"]')).toHaveValue('');await expect(page.getByRole('heading',{name:'Create a card',exact:true})).toBeVisible();
+  await page.locator('[data-card="custom-limit-0"]').click();await page.locator('[data-edit="custom-limit-0"]').click();await page.locator('[data-action="cancel-edit"]').click();await page.locator('#confirm-clear-draft').click();await expect(page.locator('#card-form [name="name"]')).toHaveValue('');await expect(page.getByRole('heading',{name:'Create a card',exact:true})).toBeVisible();
   await page.locator('[data-nav="collection"]').click();await page.locator('[data-card="custom-limit-0"]').click();await page.locator('[data-edit="custom-limit-0"]').click();
-  await page.locator('[data-nav="collection"]').click();await page.locator('[data-card="custom-limit-0"]').click();await page.locator('[data-template="custom-limit-0"]').click();
+  await page.locator('[data-nav="collection"]').click();await page.locator('[data-card="custom-limit-0"]').click();await page.locator('[data-template="custom-limit-0"]').click();await expect(page.locator('#modal h2')).toHaveText('Replace the current draft?');await page.locator('#confirm-replace-draft').click();
   await expect(page.getByRole('heading',{name:'Create a card',exact:true})).toBeVisible();await expect(page.locator('[data-action="cancel-edit"]')).toHaveCount(0);await page.locator('#card-form [type="submit"]').click();await expect(page.locator('#form-error')).toContainText('1000');
   await page.locator('[data-nav="battle"]').click();await expect(page.locator('.own-formation .board-unit-name')).toHaveText('Limit card 0');
   await page.locator('[data-action="new"]').click();await page.locator('#match-form [type="submit"]').click();await expect(page.locator('.own-formation .board-unit-name')).toHaveText('Updated original');
-  await page.locator('[data-nav="collection"]').click();await page.locator('[data-card="custom-limit-0"]').click();await page.locator('[data-edit="custom-limit-0"]').click();await page.locator('#card-form [name="type"]').selectOption('trap');await page.locator('#card-form [type="submit"]').click();
+  await page.locator('[data-nav="collection"]').click();await page.locator('[data-card="custom-limit-0"]').click();await page.locator('[data-edit="custom-limit-0"]').click();await page.locator('#confirm-replace-draft').click();await page.locator('#card-form [name="type"]').selectOption('trap');await page.locator('#card-form [type="submit"]').click();
   const changedType=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));expect(changedType.custom[0]).toMatchObject({id:'custom-limit-0',type:'trap'});expect(changedType.custom[0].effects[0].trigger).toBe('hit');expect(changedType.deck).toEqual(profile.deck);expect(changedType.decks).toEqual(profile.decks);
   await page.locator('[data-nav="battle"]').click();await expect(page.locator('.own-formation .board-unit-name')).toHaveText('Updated original');await page.locator('[data-action="new"]').click();await page.locator('#match-form [type="submit"]').click();await expect(page.locator('#match-error')).toContainText('10');await expect(page.locator('.own-formation .board-unit-name')).toHaveText('Updated original');await page.keyboard.press('Escape');
   await page.reload();await page.locator('[data-nav="workshop"]').click();await expect(page.locator('.small-count')).toHaveText('1000 custom cards');

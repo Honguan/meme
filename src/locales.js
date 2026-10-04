@@ -226,6 +226,8 @@ const rows = `
 取消編輯|Cancel editing|編集をキャンセル|Cancelar edición
 清除草稿|Clear draft|下書きを削除|Borrar borrador
 清除這份草稿？|Clear this draft?|この下書きを削除しますか？|¿Borrar este borrador?
+取代目前草稿？|Replace the current draft?|現在の下書きを置き換えますか？|¿Reemplazar el borrador actual?
+無法暫存草稿，請重試|Unable to store draft; please retry|下書きを保存できません。もう一度お試しください|No se pudo guardar el borrador; vuelve a intentarlo
 此操作無法還原。|This cannot be undone.|この操作は取り消せません。|Esta acción no se puede deshacer.
 儲存修改|Save changes|変更を保存|Guardar cambios
 卡牌已保存|Card saved|カードを保存しました|Carta guardada

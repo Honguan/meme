@@ -114,6 +114,18 @@ function clearCardDraft() {
   if(!saveDraft(null)){toast('無法清除暫存草稿，重新整理可能再次出現');return false;}
   editingId='';editSource='';formBase=null;draftFailed=false;modal.close();render();return true;
 }
+function startCardDraft(card, edit = false) {
+  if(edit&&editingId===card.id&&formBase){modal.close();screen='workshop';render();return;}
+  const draft={card:structuredClone(card),editingId:edit?card.id:'',source:edit?JSON.stringify(card):''};
+  const start=()=>{
+    if(!saveDraft(draft))return toast('無法暫存草稿，請重試');
+    formBase=draft.card;editingId=draft.editingId;editSource=draft.source;draftFailed=false;
+    modal.close();screen='workshop';render();
+  };
+  if(!formBase){start();return;}
+  openDialog(`<div class="dialog-heading"><h2>取代目前草稿？</h2><p>此操作無法還原。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-replace-draft">${icon('check')} 確認覆寫</button></div>`,'small-modal');
+  $('#confirm-replace-draft').onclick=start;
+}
 function recoveryDialog() {
   openDialog(`<div class="dialog-heading"><h2>存檔無法讀取</h2><p>原始存檔已保留。覆寫後無法還原，請先下載原始存檔。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="export-recovery">${icon('download')} 下載原始存檔</button><button class="quiet-button" data-action="import">${icon('upload')} 匯入</button><button class="primary-button" id="confirm-reset-save">${icon('refresh-cw')} 覆寫為預設卡組</button></div>`, 'small-modal save-recovery');
   $('#confirm-reset-save').onclick=()=>{if(!persist(profile,true))return;modal.close();render();};
@@ -528,8 +540,8 @@ document.addEventListener('click', e => {
     return;
   }
   if (button.dataset.filter) { const focused=button===document.activeElement;filter=button.dataset.filter; visible=24; render();if(focused)$(`[data-filter="${filter}"]`).focus(); return; }
-  if (button.dataset.edit) { const card=profile.custom.find(c=>c.id===button.dataset.edit);if(!card)return;editingId=card.id;editSource=JSON.stringify(card);formBase=structuredClone(card);storeCardDraft();modal.close();screen='workshop';render();return; }
-  if (button.dataset.template) { const card=displayCard(button.dataset.template);if(!card)return toast('找不到卡牌');editingId='';editSource='';formBase=structuredClone(card);storeCardDraft(); modal.close(); screen='workshop'; render(); return; }
+  if (button.dataset.edit) { const card=profile.custom.find(c=>c.id===button.dataset.edit);if(card)startCardDraft(card,true);return; }
+  if (button.dataset.template) { const card=displayCard(button.dataset.template);if(!card)return toast('找不到卡牌');startCardDraft(card);return; }
   if (button.dataset.preset) { if(!persist({...profile,deck:[...PRESETS[button.dataset.preset].deck]}))return;savedDeckId='';deckName='';render();toast('已套用預設卡組');return; }
   if (button.dataset.delete) {
     const id=button.dataset.delete;
@@ -584,7 +596,7 @@ document.addEventListener('click', e => {
     case 'recovery': recoveryDialog();break;
     case 'export-recovery': if(recoveryRaw!==null)exportProfile(recoveryRaw,'meme-clash-recovery.json');break;
     case 'import': importProfile();break;
-    case 'cancel-edit': clearCardDraft();break;
+    case 'cancel-edit':
     case 'clear-draft':
       openDialog(`<div class="dialog-heading"><h2>清除這份草稿？</h2><p>此操作無法還原。</p></div><div class="dialog-actions"><button class="quiet-button" data-action="close">取消</button><button class="primary-button" id="confirm-clear-draft">${icon('trash-2')} 清除草稿</button></div>`,'small-modal');
       $('#confirm-clear-draft').onclick=clearCardDraft;break;
