@@ -64,6 +64,7 @@ const rows = `
 場地區|Field zone|フィールドゾーン|Zona de campo
 牌庫|Deck|デッキ|Mazo
 墓地|Discard|墓地|Descarte
+尚無棄牌|No discarded cards|墓地にカードはありません|No hay cartas descartadas
 卡牌詳情|Card details|カード詳細|Detalles de la carta
 取消選擇|Clear selection|選択解除|Cancelar selección
 已取消|Cancelled|キャンセル済み|Cancelado

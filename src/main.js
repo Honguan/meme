@@ -63,7 +63,7 @@ function onlineStatus() {
 function receiveOnline(state) {
   if (state.status==='idle') {
     const previous=online;online=null;onlineBusy=false;replaying=false;replayKey='';
-    if(previous){game=createGame({catalog,deck:validDeck()});screen='battle';render();}
+    if(previous){modal.close();game=createGame({catalog,deck:validDeck()});screen='battle';render();}
     return;
   }
   const changed=!online||online.version!==state.version||online.status!==state.status||online.battling!==state.battling||online.error;
@@ -208,7 +208,7 @@ function battleHTML() {
         <div class="formation own-formation">${formationHTML(game.active)}</div>
         <div class="drop-status" id="drop-status" role="status" aria-live="polite"></div>
       </div>
-      <div class="duel-actions"><div class="energy-box"><span>${icon('zap')} 能量</span><strong>${game.goal==='sandbox'?'∞':p.energy}<small>/ ${Math.min(8,2+game.round)}</small></strong></div><span class="pile-count">${icon('layers')} ${p.deck.length}<small>牌庫</small></span><span class="pile-count">${icon('trash-2')} ${p.discard.length}<small>墓地</small></span><button class="primary-button clash-button" data-action="clash" ${!canPlay()?'disabled':''}>${icon('swords')} ${online||game.mode==='local'&&game.active===0?'完成部署':'開始碰撞'} ${icon('arrow-right')}</button></div>
+      <div class="duel-actions"><div class="energy-box"><span>${icon('zap')} 能量</span><strong>${game.goal==='sandbox'?'∞':p.energy}<small>/ ${Math.min(8,2+game.round)}</small></strong></div><span class="pile-count">${icon('layers')} ${p.deck.length}<small>牌庫</small></span><button class="pile-count" data-action="discard" title="墓地" aria-label="墓地" ${game.phase==='battle'||handoff||online&&online.status!=='matched'?'disabled':''}>${icon('trash-2')} ${p.discard.length}<small>墓地</small></button><button class="primary-button clash-button" data-action="clash" ${!canPlay()?'disabled':''}>${icon('swords')} ${online||game.mode==='local'&&game.active===0?'完成部署':'開始碰撞'} ${icon('arrow-right')}</button></div>
       <section class="hand-section" aria-label="手牌"><div class="hand-heading"><h2>手牌 <span>${handoff?'?':p.hand.length}</span></h2><button class="text-button" data-action="fields" ${game.phase==='battle'?'disabled':''}>更換場地 ${icon('arrow-up-right')}</button></div><div class="hand-cards">${handoff?'<div class="empty-state">等待玩家 02 接手</div>':p.hand.map((id,i)=>cardHTML(game.cards[id],i)).join('')||'<div class="empty-state">手牌已用盡，下回合繼續抽牌。</div>'}</div></section>
     </section><aside class="duel-feed"><div class="synergy-section"><h3>${icon('sparkles')} 連攜套裝 <span id="set-count">${tags.length}</span></h3><div class="synergies" id="set-progress">${setProgressHTML()}</div><details class="set-guide"><summary>套裝效果 · 2 / 3 件</summary><p>同陣營角色湊滿 2 名或 3 名就有加成，重複卡也算。角色離場後重新計算，已拿到的能量、手牌與護盾不會收回。</p>${Object.keys(TAGS).map(setRulesHTML).join('')}</details></div><div class="log-section"><h3>對決紀錄<span id="collision-count">${game.collisions} 次碰撞</span></h3><ol id="battle-log" aria-live="polite" aria-relevant="additions">${logHTML()}</ol></div></aside></div></main>`;
 }
@@ -298,7 +298,12 @@ function appearanceDialog() {
   openDialog(`<div class="dialog-heading"><h2>語言與色系</h2></div><label class="language-choice">介面語言<select id="interface-language">${Object.entries(LANGUAGES).map(([id,name])=>`<option value="${id}" ${getLocale()===id?'selected':''}>${name}</option>`).join('')}</select></label><fieldset class="theme-picker"><legend>配色</legend>${Object.entries(THEMES).map(([id,theme])=>`<label><input type="radio" name="theme" value="${id}" ${document.documentElement.dataset.theme===id?'checked':''}><span class="theme-swatch" style="--swatch:${theme.accent};--rival:${theme.rival}"></span><b>${theme.name}</b></label>`).join('')}</fieldset>`,'small-modal');
 }
 function displayCard(id) { return (screen==='battle'&&game.cards[id]) || catalog.find(c=>c.id===id); }
-function showCard(id, handIndex = null) {
+function discardDialog(side = game.active, focusId) {
+  const count=new Map();for(const id of [...game.players[side].discard].reverse())count.set(id,(count.get(id)||0)+1);
+  openDialog(`<div class="dialog-heading"><h2>墓地</h2></div><div class="filter-tabs" role="group" aria-label="墓地">${game.players.map((p,i)=>`<button data-action="discard" data-side="${i}" class="${i===side?'active':''}" aria-pressed="${i===side}"><span>${esc(p.name)}</span><span> · ${p.discard.length}</span></button>`).join('')}</div><div class="deck-list" id="discard-list" data-side="${side}">${[...count].map(([id,n],i)=>{const c=game.cards[id];return c?`<button class="deck-row discard-card" data-discard-card="${esc(id)}" aria-labelledby="discard-name-${i} discard-count-${i}">${image(c)}<span><b id="discard-name-${i}" data-original>${esc(c.name)}</b><small>${TYPES[c.type]} · ${c.cost} 能量</small></span><b id="discard-count-${i}">×${n}</b>${icon('chevron-right')}</button>`:'';}).join('')||'<p class="empty-state">尚無棄牌</p>'}</div>`,'small-modal discard-modal');
+  (focusId?$(`[data-discard-card="${CSS.escape(focusId)}"]`,modal):$(`[data-side="${side}"]`,modal))?.focus();
+}
+function showCard(id, handIndex = null, readOnly = false) {
   const c = handIndex === null ? displayCard(id) : game.cards[game.players[game.active].hand[handIndex]];
   if (!c) return;
   const error = handIndex !== null ? playError(game, game.active, handIndex) : '';
@@ -310,7 +315,7 @@ function showCard(id, handIndex = null) {
     `<button class="primary-button" data-add="${esc(c.id)}">${icon('plus')} 加入卡組</button><button class="quiet-button" data-template="${esc(c.id)}">${icon('hammer')} 以此為範本</button>${c.origin==='自訂'?`<button class="quiet-button" data-edit="${esc(c.id)}">${icon('hammer')} 編輯卡牌</button><button class="text-button danger" data-delete="${esc(c.id)}">${icon('trash-2')} 刪除自訂卡</button>`:''}`}
     ${c.evidence?`<section class="meaning-detail"><b>梗意設計 · ${esc(ARCHETYPES[c.archetype]?.name || '待設定')}</b>${c.sourceName&&c.sourceName!==c.name?`<p>原始名稱：<span data-original>${esc(c.sourceName)}</span></p>`:''}<p>依據${c.evidence.field==='name'?'名稱':'來源標籤'}：<span data-original>${esc(c.evidence.value)}</span></p><p>${esc(c.flavor)}</p>${c.languages?.length?`<p>來源語言：<span data-original>${c.languages.map(code=>esc(languageNames[code] || code)).join(' · ')}</span></p>`:''}</section>`:''}
     ${c.source?`<a class="source-link" href="${esc(c.source)}" target="_blank" rel="noopener noreferrer">來源：${c.origin==='全球'?'templates.meme':'Imgflip'} ${icon('arrow-up-right')}</a>`:'<span class="source-link">玩家自訂作品</span>'}</div></div>`, 'card-modal');
-  if(online)for(const button of modal.querySelectorAll('[data-add],[data-template],[data-edit],[data-delete],[data-favorite]'))button.hidden=true;
+  if(online||readOnly)for(const button of modal.querySelectorAll('[data-add],[data-template],[data-edit],[data-delete],[data-favorite]'))button.hidden=true;
 }
 function newDialog(showFields = false) {
   openDialog(`<div class="dialog-heading"><span class="eyebrow accent">NEXT MATCH</span><h2>${showFields?'選擇你的戰場':'建立新對決'}</h2></div><form id="match-form"><div class="match-options"><label>對手<select name="mode"><option value="ai" ${game.mode==='ai'?'selected':''}>網路混沌 AI</option><option value="local" ${game.mode==='local'?'selected':''}>同機雙人</option></select></label><label>勝利目標<select name="goal">${[['classic','生命決勝 · 20 LP'],['knockout','率先擊倒 5 名角色'],['sandbox','自由沙盒 · 無限能量']].map(([v,t])=>`<option value="${v}" ${game.goal===v?'selected':''}>${t}</option>`).join('')}</select></label></div><fieldset class="field-picker"><legend>場地</legend>${FIELDS.map((f,i)=>`<label class="field-option" style="--field:${f.color}"><input type="radio" name="field" value="${f.id}" ${game.field===f.id?'checked':''}><span class="field-art field-art-${f.id}"><span>0${i+1}</span>${icon(f.id==='fine'?'flame':f.id==='moon'?'sparkles':f.id==='xp'?'heart':'layers')}</span><b>${f.name}</b><small>${f.description}</small></label>`).join('')}</fieldset><p id="match-error" class="form-error" role="alert"></p><button class="primary-button" type="submit">${icon('swords')} 開始新對決 ${icon('arrow-right')}</button></form>`, 'match-modal');
@@ -525,6 +530,12 @@ document.addEventListener('click', e => {
     if(button.dataset.unit){if(Number(button.dataset.side)===game.active)selectPiece(button);else showCard(game.units.find(u=>u.uid===button.dataset.unit)?.id);}
     return;
   }
+  if (button.dataset.discardCard) {
+    const side=$('#discard-list').dataset.side,id=button.dataset.discardCard;
+    showCard(id,null,true);
+    $('.detail-body',modal).insertAdjacentHTML('afterbegin',`<button class="text-button" data-action="discard" data-side="${side}" data-focus-card="${esc(id)}">${icon('arrow-left')} 墓地</button>`);
+    localize(modal);drawIcons();$('[data-focus-card]',modal).focus();return;
+  }
   if (button.dataset.card) return showCard(button.dataset.card);
   if (button.dataset.play!==undefined) {
     playFromHand(Number(button.dataset.play),$('#play-target')?.value);return;
@@ -554,6 +565,11 @@ document.addEventListener('click', e => {
     $('#confirm-delete').onclick=()=>{if(!persist({...profile,custom:profile.custom.filter(c=>c.id!==id),deck:profile.deck.filter(x=>x!==id),decks:profile.decks.map(saved=>({...saved,deck:saved.deck.filter(x=>x!==id)})),favorites:profile.favorites.filter(x=>x!==id)}))return;modal.close();render();};return;
   }
   switch(button.dataset.action) {
+    case 'discard':
+      if(screen==='battle'&&!handoff&&game.phase!=='battle'&&(!online||online.status==='matched')){
+        if(!modal.open)button.focus();
+        discardDialog(button.dataset.side===undefined?game.active:Number(button.dataset.side),button.dataset.focusCard);
+      }break;
     case 'save-deck': saveDeck();break;
     case 'rename-deck': {
       const saved=profile.decks.find(item=>item.id===savedDeckId);if(!saved)break;

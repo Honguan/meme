@@ -3,6 +3,38 @@ import { DEFAULT_DECK } from '../src/catalog.js';
 import { loadout, makeRoom, command, view } from '../server/matches.js';
 import { parseProfile } from '../src/storage.js';
 
+for(const side of [0,1])test(`online graveyard side ${side} reads public snapshots without exposing hidden cards or sending commands`,async({page})=>{
+  const custom=label=>Array.from({length:9},(_,i)=>({id:`custom-discard-online-${i}`,name:`${label} ${i}`,type:i===7?'spell':i===8?'trap':'monster',tag:'bonk',cost:0,attack:1,hp:20,speed:5,image:'',flavor:'',effects:i>=7?[{trigger:i===7?'play':'hit',action:'shield',target:'self',amount:1}]:[]}));
+  const first=custom('自己原卡'),second=custom('對手原卡'),deck=[...first.map(c=>c.id),first[7].id],room=makeRoom(loadout({deck,custom:first,field:'grid'}),loadout({deck,custom:second,field:'grid'}),1000);
+  for(let i=0;i<2;i++){
+    const p=room.game.players[i],pool=[...p.hand,...p.deck];pool.sort((a,b)=>Number(room.custom[b].type!=='monster')-Number(room.custom[a].type!=='monster'));
+    p.hand=pool.slice(0,5);p.deck=pool.slice(5);
+  }
+  const play=(player,type)=>command(room,player,{action:'play',index:room.game.players[player].hand.findIndex(id=>room.custom[id].type===type)},1001);
+  play(0,'spell');play(0,'spell');command(room,0,{action:'ready'},1002);play(1,'spell');play(1,'trap');
+  const snapshot=view(room,side,5,'discard-test',1003,1003),original=JSON.stringify(snapshot),enemy=1-side,hiddenTrap=`online-${enemy}-${first[8].id}`,requests=[];
+  expect(snapshot.game.players[enemy].hand.every(id=>id===null)).toBeTruthy();expect(snapshot.game.players.every(p=>p.deck.every(id=>id===null))).toBeTruthy();
+  if(side===0){expect(snapshot.game.players[1].traps).toEqual(['hidden']);expect(snapshot.game.cards[hiddenTrap]).toBeUndefined();}
+  let expired=false;const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.route('**/api/match/**',route=>{const action=new URL(route.request().url()).pathname.split('/').at(-1);requests.push(action);
+    if(expired&&action==='state')return route.fulfill(side===0?{json:{status:'idle'}}:{status:401,json:{error:'連線憑證無效'}});
+    return route.fulfill({json:action==='leave'?{status:'idle'}:snapshot});});
+  await prepare(page);const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));await join(page);await expect(page.locator('#online-status')).toContainText(side===0?'等待對手部署':'輪到你部署');
+  await page.locator('.duel-actions [data-action="discard"]').click();await expect(page.locator(`.discard-modal button[data-side="${side}"]`)).toHaveAttribute('aria-pressed','true');
+  for(const owner of [0,1]){
+    await page.locator(`.discard-modal button[data-side="${owner}"]`).click();const id=`online-${owner}-${first[7].id}`,row=page.locator(`[data-discard-card="${id}"]`);
+    await expect(page.locator('#discard-list .discard-card')).toHaveCount(1);await expect(row).toContainText(`${owner===0?'自己':'對手'}原卡 7`);await expect(row).toContainText(owner===0?'×2':'×1');await expect(page.locator(`[data-discard-card="${hiddenTrap}"]`)).toHaveCount(0);
+    await row.click();await expect(page.locator('#modal h2')).toHaveText(`${owner===0?'自己':'對手'}原卡 7`);await expect(page.locator('[data-preview]')).toHaveAttribute('data-preview',id);await expect(page.locator('#modal [data-play]')).toHaveCount(0);
+    for(const selector of ['[data-add]','[data-template]','[data-edit]','[data-delete]','[data-favorite]'])await expect(page.locator(`#modal ${selector}`)).toBeHidden();
+    await page.locator('[data-focus-card]').click();await expect(row).toBeFocused();
+  }
+  await page.keyboard.press('Escape');await expect(page.locator('.duel-actions [data-action="discard"]')).toBeFocused();
+  expect(requests.every(action=>['join','state'].includes(action))).toBeTruthy();expect(JSON.stringify(snapshot)).toBe(original);expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+  await page.locator('.duel-actions [data-action="discard"]').click();await page.locator('#discard-list [data-discard-card]').click();await page.locator('[data-preview]').click();await expect(page.locator('#modal-preview-stage canvas')).toBeVisible();expired=true;
+  await expect(page.locator('#online-status')).toHaveCount(0);await expect(page.locator('#modal')).not.toBeVisible();await expect(page.locator('#modal-preview-stage canvas')).toHaveCount(0);
+  expect(errors).toEqual([]);expect(await page.evaluate(()=>sessionStorage.getItem('meme-clash-online'))).toBeNull();expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+});
+
 test('local D1 handles simultaneous queues, duplicate commands and cancellation without orphan players',async({page,baseURL})=>{
   test.skip(!['localhost','127.0.0.1','[::1]'].includes(new URL(baseURL).hostname),'Queue bursts run only against the local test database.');
   await page.goto('/');

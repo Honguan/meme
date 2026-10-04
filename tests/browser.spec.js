@@ -2,6 +2,34 @@ import { test, expect } from '@playwright/test';
 import { freshProfile, parseProfile } from '../src/storage.js';
 import { CATALOG } from '../src/catalog.js';
 import { DRAFT_KEY } from '../src/draft.js';
+import { createGame } from '../src/game.js';
+
+test('graveyard inspection groups live discards and preserves battle state, focus and mobile layouts',async({page},testInfo)=>{
+  const profile=freshProfile(),unit={id:'custom-discard-unit',name:'墓地測試角色',type:'monster',tag:'bonk',cost:0,attack:1,hp:20,speed:5,image:'',flavor:'',effects:[]};
+  const spells=Array.from({length:8},(_,i)=>({...unit,id:`custom-discard-${i}`,name:i===0?'A'.repeat(72):`墓地角色 ${i}`,type:'spell',effects:[{trigger:'play',action:'heal',target:'self',amount:1}]}));
+  profile.custom=[unit,...spells];profile.deck=[unit.id,spells[0].id,spells[0].id,...spells.slice(1).map(c=>c.id)];
+  let seed=1;while(createGame({catalog:[...CATALOG,...profile.custom],deck:profile.deck,seed}).players[0].hand.filter(id=>id===spells[0].id).length!==2)seed++;
+  await page.addInitScript(({profile,seed})=>{localStorage.setItem('meme-clash-v1',JSON.stringify(profile));Date.now=()=>seed;},{profile,seed});await page.goto('/');
+  const pile=page.locator('.duel-actions [data-action="discard"]');await pile.focus();await page.keyboard.press('Enter');await expect(page.locator('#discard-list')).toContainText('尚無棄牌');
+  await page.locator('.discard-modal button[data-side="1"]').click();await expect(page.locator('.discard-modal button[data-side="1"]')).toBeFocused();await expect(page.locator('#discard-list .discard-card')).toHaveCount(0);
+  await page.keyboard.press('Escape');await expect(pile).toBeFocused();
+  const play=async name=>{await page.locator('.hand-cards .meme-card').filter({hasText:name}).first().click();await page.locator('[data-action="inspect"]').click();await page.locator('[data-play]').click();};
+  await play(spells[0].name);await play(spells[0].name);const last=await page.locator('.hand-cards .card-name').first().textContent();await play(last);
+  const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1')),snapshot=await page.locator('.duel-table').textContent();
+  await pile.click();const cards=page.locator('#discard-list [data-discard-card]');await expect(cards).toHaveCount(2);await expect(cards.nth(1)).toContainText('×2');
+  expect(await cards.nth(1).getAttribute('data-discard-card')).toBe(spells[0].id);await expect(cards.first()).toContainText(last);
+  for(const width of [1440,390,320]){await page.setViewportSize({width,height:900});expect(await page.locator('#modal').evaluate(d=>d.scrollWidth<=d.clientWidth)).toBeTruthy();
+    const bounds=await cards.evaluateAll(rows=>rows.map(row=>{const r=row.getBoundingClientRect();return {top:r.top,bottom:r.bottom,right:r.right};}));expect(bounds[1].top).toBeGreaterThanOrEqual(bounds[0].bottom);expect(bounds.every(r=>r.right<=width)).toBeTruthy();
+    if(width===390)await page.screenshot({path:`.artifacts/discard-${testInfo.project.name}-mobile.png`});}
+  await cards.nth(1).click();await expect(page.locator('#modal h2')).toHaveText(spells[0].name);for(const selector of ['[data-add]','[data-template]','[data-edit]','[data-delete]','[data-favorite]'])await expect(page.locator(`#modal ${selector}`)).toBeHidden();
+  await page.locator('[data-preview]').click();await expect(page.locator('#modal-preview-stage canvas')).toBeVisible();await page.locator('[data-focus-card]').click();await expect(page.locator(`[data-discard-card="${spells[0].id}"]`)).toBeFocused();
+  await page.locator('.discard-modal button[data-side="1"]').click();await expect(page.locator('#discard-list')).toContainText('尚無棄牌');await page.keyboard.press('Escape');await expect(pile).toBeFocused();
+  expect(await page.locator('.duel-table').textContent()).toBe(snapshot);expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+  for(const [locale,label,empty] of [['en','Discard','No discarded cards'],['ja','墓地','墓地にカードはありません'],['es','Descarte','No hay cartas descartadas']]){
+    await page.locator('[data-action="appearance"]').click();await page.locator('#interface-language').selectOption(locale);await page.locator('#modal [data-action="close"]').click();
+    await pile.click();await expect(page.locator('#modal')).toHaveAccessibleName(label);await expect(cards.first()).toHaveAccessibleName(`${last} ×1`);await expect(cards.nth(1)).toHaveAccessibleName(`${spells[0].name} ×2`);await page.locator('.discard-modal button[data-side="1"]').click();await expect(page.locator('#discard-list')).toContainText(empty);await page.keyboard.press('Escape');}
+  await page.locator('[data-action="clash"]').click();await expect(pile).toBeDisabled();await expect(page.locator('#round-number')).toHaveText('02',{timeout:15000});
+});
 
 test('failed card art falls back without changing authored names or saved data',async({page},testInfo)=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
