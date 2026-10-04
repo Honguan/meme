@@ -7,16 +7,24 @@ for(const mode of ['local','online'])test(`${mode} inspector cancellation restor
   const requests=[],errors=[];page.on('pageerror',error=>errors.push(error.message));
   if(mode==='online'){
     const room=makeRoom(loadout({deck:DEFAULT_DECK,custom:[],field:'grid'}),loadout({deck:DEFAULT_DECK,custom:[],field:'grid'}),1000),snapshot=view(room,0,1,'selection-test',1001,1001);
-    await page.route('**/api/match/**',route=>{requests.push(new URL(route.request().url()).pathname.split('/').at(-1));return route.fulfill({json:snapshot});});
-    // Keep polling redraws outside this local selection/focus contract.
-    await page.addInitScript(()=>{const timer=window.setTimeout;window.setTimeout=(fn,delay,...args)=>timer(fn,delay===1500?60000:delay,...args);});
+    await page.route('**/api/match/**',route=>{const action=new URL(route.request().url()).pathname.split('/').at(-1);requests.push(action);return route.fulfill({json:{...snapshot,remaining:snapshot.remaining-requests.filter(action=>action==='state').length,opponentOffline:action==='state'}});});
   }
   await prepare(page);if(mode==='online'){await join(page);await expect(page.locator('#online-status')).toContainText('輪到你部署');}
   const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1')),before=await page.locator('.duel-table').textContent();
   for(const width of [1440,390])for(const selector of ['[data-hand="1"]','.own-formation [data-unit]']){
     await page.setViewportSize({width,height:900});const piece=page.locator(selector).first(),inspect=page.locator('#card-inspector [data-action="inspect"]'),cancel=page.locator('[data-action="cancel-selection"]');
     await piece.focus();await page.keyboard.press('Enter');await expect(piece).toHaveAttribute('aria-pressed','true');const name=await page.locator('#card-inspector h2').textContent();
-    await inspect.focus();await page.keyboard.press('Enter');await expect(page.locator('#modal')).toBeVisible();await page.keyboard.press('Escape');await expect(page.locator('#modal')).not.toBeVisible();
+    await inspect.focus();
+    if(mode==='online'){
+      const polls=requests.filter(action=>action==='state').length;await expect.poll(()=>requests.filter(action=>action==='state').length).toBeGreaterThan(polls);
+      await expect(page.locator('#online-status')).toContainText('對手暫時離線');await expect(inspect).toBeFocused();await expect(piece).toHaveAttribute('aria-pressed','true');
+    }
+    await page.keyboard.press('Enter');await expect(page.locator('#modal')).toBeVisible();
+    if(mode==='online'){
+      const polls=requests.filter(action=>action==='state').length;await expect.poll(()=>requests.filter(action=>action==='state').length).toBeGreaterThan(polls);
+      await expect(page.locator('#modal')).toBeVisible();await expect(page.locator('#modal h2')).toHaveText(name);
+    }
+    await page.keyboard.press('Escape');await expect(page.locator('#modal')).not.toBeVisible();
     await expect(piece).toHaveAttribute('aria-pressed','true');await expect(page.locator('#card-inspector h2')).toHaveText(name);await expect(inspect).toBeFocused();
     await cancel.focus();await page.keyboard.press('Enter');await expect(piece).toBeFocused();await expect(piece).toHaveAttribute('aria-pressed','false');await expect(cancel).toHaveCount(0);await expect(page.locator('.drop-valid')).toHaveCount(0);
     await page.keyboard.press('Enter');await inspect.focus();await page.keyboard.press('Escape');await expect(piece).toBeFocused();await expect(piece).toHaveAttribute('aria-pressed','false');
