@@ -155,7 +155,7 @@ export function playCard(g, side, index, targetId, slot) {
   if (card.type === 'fusion') {
     const pair = fusionPair(g, side);
     for (const u of pair) { g.units.splice(g.units.indexOf(u), 1); p.discard.push(u.id); }
-    source = summon(g, { ...card, tag: pair[0].tag, attack: card.attack + Math.floor((pair[0].attack + pair[1].attack) / 2) }, side, slot);
+    source = summon(g, { ...card, tag: pair[0].tag, attack: Math.min(999, card.attack + Math.floor((pair[0].attack + pair[1].attack) / 2)) }, side, slot);
     note(g, `${pair.map(u => u.name).join(' + ')} → ${card.name}`, 'combo');
   } else if (card.type === 'monster') source = summon(g, card, side, slot);
   else if (card.type === 'trap') p.traps.push(card.id);

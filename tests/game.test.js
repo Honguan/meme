@@ -318,6 +318,28 @@ test('fusion consumes two same-tag units without counting them as knockouts',()=
   assert.equal(units(g,0)[0].attack,11);assert.equal(units(g,0)[0].tag,'bonk');
   assert.equal(g.players[1].ko,0);assert.equal(g.players[0].hp,20);
 });
+test('fusion retains the attack cap through repeated fusions so buffs never reduce its attack',()=>{
+  for(const side of [0,1])for(const attack of [0,1,99]){
+    const g=setup();g.active=side;
+    const material=validateCustom({...card('doge'),attack:99,effects:[]});
+    const buff=validateCustom({...card('doge'),type:'spell',cost:0,effects:[{trigger:'play',action:'buff',target:'allies',amount:99}]});
+    const fusion=validateCustom({...card('fusion'),cost:0,attack,effects:[]});
+    g.cards[buff.id]=buff;g.cards[fusion.id]=fusion;
+    summon(g,material,side);summon(g,material,side);
+    for(let i=0;i<10;i++)effects(g,buff,side,'play');
+    assert.deepEqual(units(g,side).map(u=>u.attack),[999,999]);
+    for(let repeat=0;repeat<2;repeat++){
+      if(repeat){summon(g,material,side);for(let i=0;i<10;i++)effects(g,buff,side,'play');}
+      g.players[side].hand=[fusion.id,buff.id];
+      assert.equal(playCard(g,side,0).ok,true);
+      assert.equal(units(g,side).length,1);assert.equal(units(g,side)[0].attack,999);
+      assert.equal(units(g,side)[0].tag,material.tag);
+      assert.equal(playCard(g,side,0).ok,true);assert.equal(units(g,side)[0].attack,999);
+      assert.equal(g.players[side].discard.filter(id=>id===material.id).length,repeat+2);
+      assert.deepEqual(g.players.map(p=>p.ko),[0,0]);assert.deepEqual(g.players.map(p=>p.hp),[20,20]);
+    }
+  }
+});
 test('death cascades resolve each knockout exactly once',()=>{
   const g=setup();const a=summon(g,card('girl'),0),b=summon(g,card('girl'),1);
   a.hp=0;b.hp=1;cleanup(g);cleanup(g);

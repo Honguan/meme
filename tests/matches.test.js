@@ -309,6 +309,26 @@ test('a live player exceeding the deployment deadline forfeits, and strangers ca
   db.sql.close();
 });
 
+test('authoritative fusion keeps capped attack through serialization and subsequent buffs for either player',()=>{
+  const material={...CATALOG.find(c=>c.id==='doge'),id:'limit-monster',cost:0,attack:99,hp:999,effects:[]};
+  const fusion={...material,id:'limit-fusion',type:'fusion'};
+  const buff={...material,id:'limit-buff',type:'spell',effects:[{trigger:'play',action:'buff',target:'allies',amount:99}]};
+  const p=loadout({deck:[material.id,material.id,fusion.id,fusion.id,buff.id,buff.id,...DEFAULT_DECK.slice(0,4)],custom:[material,fusion,buff],field:'grid'});
+  for(const side of [0,1]){
+    let room=makeRoom(p,p,0);room.game.active=side;
+    const source=room.game.units.find(u=>u.side===side);source.attack=999;
+    room.game.units.push({...structuredClone(source),uid:`u${room.game.nextId++}`,slot:1});
+    const id=`online-${side}-${fusion.id}`;room.game.players[side].hand=[id,`online-${side}-${buff.id}`];
+    command(room,side,{action:'play',index:0,slot:2},1);
+    room=JSON.parse(JSON.stringify(room));
+    const unit=room.game.units.find(u=>u.side===side);
+    assert.equal(unit.attack,999);assert.equal(unit.slot,2);assert.equal(unit.id,id);
+    command(room,side,{action:'play',index:0},2);
+    for(const viewer of [0,1])assert.equal(view(room,viewer,2,'test',2,2).game.units.find(u=>u.uid===unit.uid).attack,999);
+    assert.equal(room.custom[id].attack,99);assert.equal(p.custom[fusion.id].attack,99);
+    assert.deepEqual(room.game.players.map(p=>p.ko),[0,0]);assert.deepEqual(room.game.players.map(p=>p.hp),[20,20]);
+  }
+});
 test('custom cards are namespaced, snapshots do not mutate authority, and RNG resumes exactly',()=>{
   const custom=Array.from({length:10},(_,i)=>({id:`c-${i}`,name:`Card ${i}`,type:'monster',tag:'bonk',cost:1,attack:2,hp:20,speed:5,image:'',effects:[]}));
   const p=loadout({deck:custom.map(c=>c.id),custom,field:'grid'}),room=makeRoom(p,p,0);
