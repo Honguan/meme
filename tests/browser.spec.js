@@ -398,6 +398,21 @@ test('catalog search keeps the composing input until commit or cancellation',asy
   expect(errors).toEqual([]);
 });
 
+test('home link returns to the current battle repeatedly even when its fragment is unchanged',async({page})=>{
+  await page.setViewportSize({width:1440,height:1080});await page.goto('/');
+  const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1')),hand=await page.locator('.hand-cards [data-hand]').allTextContents(),units=await page.locator('.own-formation [data-unit]').evaluateAll(elements=>elements.map(element=>element.dataset.unit));
+  for(const screen of ['collection','workshop','collection']){
+    await page.locator(`[data-nav="${screen}"]`).click();const home=page.locator('a.brand');
+    if(screen==='workshop'){await home.focus();await page.keyboard.press('Enter');}else await home.click();
+    await expect(page.locator('[data-nav="battle"]')).toHaveAttribute('aria-current','page');await expect(page.locator('#round-number')).toHaveText('01');
+    expect(await page.locator('.hand-cards [data-hand]').allTextContents()).toEqual(hand);expect(await page.locator('.own-formation [data-unit]').evaluateAll(elements=>elements.map(element=>element.dataset.unit))).toEqual(units);
+    expect(await page.evaluate(()=>location.hash)).toBe('#battle');expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+  }
+  await page.locator('[data-nav="collection"]').click();await page.evaluate(()=>document.addEventListener('click',event=>window.homeDefaultPrevented=event.defaultPrevented,{once:true}));await page.locator('a.brand').click({modifiers:['Control']});
+  await expect(page.locator('[data-nav="collection"]')).toHaveAttribute('aria-current','page');expect(await page.evaluate(()=>window.homeDefaultPrevented)).toBe(false);for(const popup of page.context().pages())if(popup!==page)await popup.close();
+  await page.locator('a.brand').click();await page.locator('[data-action="clash"]').click();await expect(page.locator('#phase-chip')).toHaveText('碰撞對決中');
+  await page.locator('canvas').evaluate(canvas=>canvas.dataset.homeReturn='active');await page.locator('a.brand').click();await expect(page.locator('canvas')).toHaveAttribute('data-home-return','active');await expect(page.locator('#round-number')).toHaveText('02',{timeout:15000});
+});
 test('collection filters retain focus after redraw for continued keyboard navigation',async({page})=>{
   await page.goto('/');await page.locator('[data-nav="collection"]').click();
   const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));

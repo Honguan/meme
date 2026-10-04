@@ -505,6 +505,7 @@ cancelDrag=bindDrag(app,{
 });
 
 document.addEventListener('click', e => {
+  if(e.target.closest('a.brand')&&location.hash==='#battle'&&game.phase!=='battle'&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey){screen='battle';render();return;}
   const button = e.target.closest('button');
   if (!button || button.disabled) return;
   if (button.dataset.preview) {
