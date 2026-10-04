@@ -79,8 +79,8 @@ export function safeImage(value) {
   try { return new URL(value).protocol === 'https:'; } catch { return false; }
 }
 export function effectText(card) {
-  if (card.type === 'field') return tr(FIELDS.find(f => f.id === card.field)?.description ?? '');
-  return card.effects.map(e => tr('{trigger}：{target}{action} {amount}',{trigger:tr(TRIGGERS[e.trigger]),target:tr(['draw','energy'].includes(e.action)?(['enemy','enemies'].includes(e.target)?'對手':'自己'):TARGETS[e.target]),action:tr(ACTIONS[e.action]),amount:e.amount})).join('；');
+  const text = card.effects.map(e => tr('{trigger}：{target}{action} {amount}',{trigger:tr(TRIGGERS[e.trigger]),target:tr(['draw','energy'].includes(e.action)?(['enemy','enemies'].includes(e.target)?'對手':'自己'):TARGETS[e.target]),action:tr(ACTIONS[e.action]),amount:e.amount})).join('；');
+  return card.type === 'field' ? [tr(FIELDS.find(f => f.id === card.field)?.description ?? ''),text].filter(Boolean).join('；') : text;
 }
 export function validateCustom(input) {
   if (!input || typeof input !== 'object' || !Object.hasOwn(TYPES, input.type) || !Object.hasOwn(TAGS, input.tag)) throw new Error('卡牌類型或陣營無效');

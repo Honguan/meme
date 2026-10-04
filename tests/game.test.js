@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import Matter from 'matter-js';
-import { CATALOG, CORE, TAGS, validateCustom, templateCards, DEFAULT_DECK } from '../src/catalog.js';
+import { CATALOG, CORE, TAGS, FIELDS, validateCustom, templateCards, DEFAULT_DECK } from '../src/catalog.js';
 import { createGame, createDailyGame, randomWorldDeck, playCard, summon, collide, cleanup, finishRound, planAI, checkWinner, combos, draw, units, effects } from '../src/game.js';
 import { previewGame } from '../src/preview.js';
 import { createBattle } from '../src/physics.js';
@@ -51,6 +51,24 @@ test('resource descriptions name the player rather than multiplying per unit in 
       }
     }
   }finally{setLocale('zh-Hant');}
+});
+
+test('field descriptions disclose additional effects in every locale without changing field-only cards or combat',()=>{
+  const added=[{trigger:'play',action:'draw',target:'self',amount:2},{trigger:'play',action:'energy',target:'self',amount:3},{trigger:'play',action:'damage',target:'enemy',amount:4},{trigger:'play',action:'shield',target:'ally',amount:5}];
+  try{
+    for(const locale of Object.keys(LANGUAGES)){
+      setLocale(locale);
+      for(const field of FIELDS){
+        const c=validateCustom({...card('doge'),type:'field',field:field.id,effects:added}),before=JSON.stringify(c);
+        const text=effectText(c);assert.ok(text.startsWith(tr(field.description)));assert.ok(text.includes(effectText({...c,type:'spell'})));assert.equal(JSON.stringify(c),before);
+        assert.equal(effectText({...c,effects:[]}),tr(field.description));
+      }
+      for(const c of CORE.filter(c=>c.type==='field'))assert.equal(effectText(c),tr(FIELDS.find(f=>f.id===c.field).description));
+    }
+  }finally{setLocale('zh-Hant');}
+  const g=setup(),c=validateCustom({...card('doge'),type:'field',field:'fine',cost:1,effects:added});
+  const friend=summon(g,card('doge'),0),enemy=summon(g,card('harold'),1);g.cards[c.id]=c;g.players[0].hand=[c.id];g.players[0].deck=['doge','harold'];
+  assert.equal(playCard(g,0,0).ok,true);assert.equal(g.field,'fine');assert.equal(g.players[0].energy,11);assert.deepEqual(g.players[0].hand,['doge','harold']);assert.equal(friend.shield,5);assert.equal(enemy.hp,12);
 });
 
 test('explicit single-target plays reject the wrong side without spending and retain mixed-effect fallback',()=>{

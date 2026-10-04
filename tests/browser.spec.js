@@ -1073,6 +1073,26 @@ test('language changes preserve the duel, localize each view and persist on mobi
   expect(errors).toEqual([]);
 });
 
+test('created field cards disclose and search all added effects on desktop and mobile',async({page})=>{
+  await page.goto('/');await page.locator('[data-nav="workshop"]').click();
+  await page.locator('#card-form [name="name"]').fill('額外場地測試');await page.locator('#card-form [name="type"]').selectOption('field');await page.locator('#card-form [name="field"]').selectOption('fine');
+  const extra=[['draw','self','2'],['energy','self','3'],['damage','enemy','4'],['shield','ally','5']];
+  for(let i=0;i<extra.length;i++){
+    if(i)await page.locator('[data-action="add-effect"]').click();const row=page.locator('.effect-row').nth(i),[action,target,amount]=extra[i];
+    await row.locator('[name="action"]').selectOption(action);await row.locator('[name="target"]').selectOption(target);await row.locator('[name="amount"]').fill(amount);
+  }
+  await page.getByRole('button',{name:'鑄造卡牌',exact:true}).click();await expect(page.locator('#toast')).toContainText('額外場地測試');
+  const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1')),card=JSON.parse(saved).custom.at(-1),rules=['每輪開始：非混沌角色受到 1 點傷害。','打出時：自己抽牌 2','打出時：自己獲得能量 3','打出時：一名敵軍造成傷害 4','打出時：一名友軍獲得護盾 5'];
+  for(const width of [1440,390]){
+    await page.setViewportSize({width,height:width===390?844:1080});await page.locator('#origin-filter').selectOption('自訂');
+    const tile=page.locator(`.catalog-grid [data-card="${card.id}"]`);for(const rule of rules)await expect(tile.locator('.card-ability')).toContainText(rule);
+    await page.locator('#search').fill('自己抽牌 2');await expect(page.locator('.catalog-grid .meme-card')).toHaveCount(1);await tile.click();
+    for(const rule of rules)await expect(page.locator('.effect-detail')).toContainText(rule);
+    await page.locator('[data-preview]').click();await expect(page.locator('[data-preview-status]')).toContainText('登場效果');await expect(page.locator('[data-preview-status]')).toContainText('能量 6');await expect(page.locator('[data-preview-status]')).toContainText('手牌 2');
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);await page.keyboard.press('Escape');
+  }
+});
+
 test('translated workshop and previews preserve user-authored card text',async({page})=>{
   await page.goto('/');await page.locator('[data-action="appearance"]').click();
   await page.locator('#interface-language').selectOption('en');await page.keyboard.press('Escape');
