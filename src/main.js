@@ -515,7 +515,7 @@ document.addEventListener('click', e => {
     if(screen==='collection')render();return;
   }
   if (button.dataset.remove) { const at=profile.deck.indexOf(button.dataset.remove); if(at>=0&&persist({...profile,deck:profile.deck.filter((_,i)=>i!==at)}))render(); return; }
-  if (button.dataset.filter) { filter=button.dataset.filter; visible=24; render(); return; }
+  if (button.dataset.filter) { const focused=button===document.activeElement;filter=button.dataset.filter; visible=24; render();if(focused)$(`[data-filter="${filter}"]`).focus(); return; }
   if (button.dataset.edit) { const card=profile.custom.find(c=>c.id===button.dataset.edit);if(!card)return;editingId=card.id;editSource=JSON.stringify(card);formBase=structuredClone(card);storeCardDraft();modal.close();screen='workshop';render();return; }
   if (button.dataset.template) { const card=displayCard(button.dataset.template);if(!card)return toast('找不到卡牌');editingId='';editSource='';formBase=structuredClone(card);storeCardDraft(); modal.close(); screen='workshop'; render(); return; }
   if (button.dataset.preset) { if(!persist({...profile,deck:[...PRESETS[button.dataset.preset].deck]}))return;savedDeckId='';deckName='';render();toast('已套用預設卡組');return; }
@@ -608,6 +608,7 @@ document.addEventListener('change', e=>{
   if(e.target.id==='country-filter') {sourceCountry=e.target.value;visible=24;render();}
   if(e.target.id==='ability-filter') {ability=e.target.value;visible=24;render();}
   if(e.target.id==='sort-order') {sortOrder=e.target.value;visible=24;render();}
+  if(['origin-filter','language-filter','country-filter','ability-filter','sort-order'].includes(e.target.id))$(`#${e.target.id}`).focus();
   if(e.target.id==='favorites-only') {favoritesOnly=e.target.checked;visible=24;render();$('#favorites-only').focus();}
   if(e.target.name==='type') {syncTriggers();localize($('#effect-rows'));}
   if(e.target.closest('#card-form')){formBase=readCardForm(e.target.form);storeCardDraft();}

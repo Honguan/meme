@@ -373,6 +373,28 @@ test('catalog search keeps the composing input until commit or cancellation',asy
   expect(errors).toEqual([]);
 });
 
+test('collection filters retain focus after redraw for continued keyboard navigation',async({page})=>{
+  await page.goto('/');await page.locator('[data-nav="collection"]').click();
+  const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+  for(const width of [1440,390]){
+    await page.setViewportSize({width,height:900});
+    for(const id of ['origin-filter','language-filter','country-filter','ability-filter','sort-order']){
+      const control=page.locator(`#${id}`),value=await control.locator('option').nth(1).getAttribute('value');
+      await control.focus();await control.selectOption(value);await expect(control).toBeFocused();await expect(control).toHaveValue(value);
+      await page.keyboard.press('Tab');await expect(control).not.toBeFocused();
+      await control.focus();await control.selectOption(id==='sort-order'?'catalog':'all');await expect(control).toBeFocused();
+    }
+    for(const type of ['monster','spell','all']){
+      const control=page.locator(`[data-filter="${type}"]`);
+      await control.focus();await page.keyboard.press('Enter');await expect(control).toBeFocused();await expect(control).toHaveAttribute('aria-pressed','true');
+    }
+    const favorites=page.locator('#favorites-only');await favorites.focus();await page.keyboard.press('Space');await expect(favorites).toBeFocused();await expect(favorites).toBeChecked();
+    await page.keyboard.press('Space');await expect(favorites).toBeFocused();await expect(favorites).not.toBeChecked();
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+  }
+  expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+});
+
 test('collection sorts every matching card before pagination without changing saved cards',async({page})=>{
   const profile=freshProfile();profile.custom=Array.from({length:26},(_,i)=>({id:`custom-sort-${i}`,name:i===0?'Sort 10':i===1?'Sort 2':`Z ${i}`,type:'monster',tag:'bonk',cost:i===25?0:1,attack:i,hp:i+10,speed:5,image:'',flavor:'',effects:[]}));
   await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),profile);
