@@ -239,7 +239,7 @@ export function finishRound(g) {
       u.hitUsed = false;
       if (active.includes('wholesome')) u.hp = Math.min(u.maxHp, u.hp + 2 + (full.includes('wholesome') ? 3 : 0));
       if (active.includes('glitch')) u.shield = Math.min(999, u.shield + 2 + (full.includes('glitch') ? 3 : 0));
-      if (g.field === 'backrooms') u.shield++;
+      if (g.field === 'backrooms') u.shield = Math.min(999, u.shield + 1);
       if (g.field === 'xp') u.hp = Math.min(u.maxHp, u.hp + 2);
       effects(g, u, side, 'round', u);
       if (g.field === 'fine' && u.tag !== 'chaos') damage(g, u, 1);

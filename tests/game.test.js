@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import Matter from 'matter-js';
 import { CATALOG, CORE, TAGS, FIELDS, validateCustom, templateCards, DEFAULT_DECK } from '../src/catalog.js';
-import { createGame, createDailyGame, randomWorldDeck, playCard, summon, collide, cleanup, finishRound, planAI, checkWinner, combos, draw, units, effects } from '../src/game.js';
+import { createGame, createDailyGame, randomWorldDeck, playCard, summon, collide, cleanup, finishRound, planAI, checkWinner, combos, draw, units, effects, damage } from '../src/game.js';
 import { previewGame } from '../src/preview.js';
 import { createBattle } from '../src/physics.js';
 import { parseProfile, freshProfile } from '../src/storage.js';
@@ -313,6 +313,23 @@ test('round rules apply field hazards, shields, healing, draws and synergy',()=>
   g.field='xp';finishRound(g);assert.equal(a.hp,12);
   g.players[0].hand=[];g.players[0].discard=['bonk'];draw(g,0);assert.deepEqual(g.players[0].hand,['bonk']);
 });
+test('backrooms respects the shield cap with custom effects and both glitch set sizes',()=>{
+  for(const count of [1,2,3]){
+    const g=setup();g.goal='sandbox';g.field='backrooms';
+    for(const side of [0,1])for(let slot=0;slot<count;slot++)summon(g,{...card('doge'),tag:'glitch',effects:[]},side,slot);
+    const shield=validateCustom({...card('doge'),type:'spell',cost:0,effects:Array.from({length:4},()=>({trigger:'play',action:'shield',target:'allies',amount:99}))});
+    g.cards[shield.id]=shield;
+    for(const side of [0,1]){
+      g.active=side;g.players[side].hand=Array(3).fill(shield.id);
+      for(let i=0;i<3;i++)assert.equal(playCard(g,side,0).ok,true);
+    }
+    assert.ok(g.units.every(u=>u.shield===999));finishRound(g);finishRound(g);
+    assert.ok(g.units.every(u=>u.shield===999));
+    for(const u of g.units)damage(g,u,10);
+    finishRound(g);assert.ok(g.units.every(u=>u.shield===990+(count>=2?2:0)+(count===3?3:0)));
+  }
+});
+
 test('all victory goals work, including simultaneous draw and endless sandbox',()=>{
   const g=setup();g.players[0].hp=0;checkWinner(g);assert.equal(g.winner,1);
   const tie=setup();tie.players.forEach(p=>p.hp=0);checkWinner(tie);assert.equal(tie.winner,'draw');
