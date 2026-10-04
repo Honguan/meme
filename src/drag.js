@@ -36,8 +36,9 @@ export function bindDrag(root, { canStart, start, over, drop, cancel }) {
     if(pending?.element.hasPointerCapture(pending.id))pending.element.releasePointerCapture(pending.id);
     pending=null;document.body.classList.remove('card-dragging');
   };
-  const abort=()=>{if(!pending)return;const wasActive=active;cleanup();if(wasActive)cancel();};
+  const abort=()=>{if(!pending)return;const wasActive=active;cleanup();if(wasActive){suppressClick=true;cancel();}};
   root.addEventListener('pointerdown',e=>{
+    if(e.button===0)suppressClick=false;
     const element=e.target.closest('[data-hand],[data-unit]');
     if(pending||e.button!==0||!element||!canStart(element))return;
     pending={element,id:e.pointerId,x:e.clientX,y:e.clientY,touch:e.pointerType==='touch'};
@@ -64,7 +65,7 @@ export function bindDrag(root, { canStart, start, over, drop, cancel }) {
     const target=document.elementFromPoint(e.clientX,e.clientY)?.closest('[data-drop]');
     suppressClick=true;cleanup();drop(target);setTimeout(()=>{suppressClick=false;},0);
   });
-  root.addEventListener('click',e=>{if(suppressClick){e.preventDefault();e.stopImmediatePropagation();}},true);
+  root.addEventListener('click',e=>{if(suppressClick&&e.detail>0){suppressClick=false;e.preventDefault();e.stopImmediatePropagation();}},true);
   root.addEventListener('pointercancel',e=>{if(e.pointerId===pending?.id)abort();});
   root.addEventListener('lostpointercapture',e=>{if(active&&e.pointerId===pending?.id&&e.target===pending.element)abort();});
   root.addEventListener('dragstart',e=>{if(e.target.closest('[data-hand],[data-unit]'))e.preventDefault();});

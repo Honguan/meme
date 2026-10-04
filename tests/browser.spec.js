@@ -852,6 +852,21 @@ async function dragCard(page,source,target,{cancel=false,touch=false}={}) {
     if(cancel)await page.keyboard.press('Escape');await page.mouse.up();
   }
 }
+test('cancelled drags suppress their release click without blocking the next pointer or keyboard action',async({page})=>{
+  await dragDeck(page);const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1')),hand=page.locator('.hand-cards [data-hand]');
+  for(const width of [1440,390]){
+    await page.setViewportSize({width,height:1080});await hand.first().scrollIntoViewIfNeeded();const box=await hand.first().boundingBox(),x=box.x+box.width/2,y=box.y+box.height/2;
+    await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x,y-14);await expect(page.locator('.drag-ghost')).toHaveCount(1);await page.mouse.move(x,y);
+    await page.keyboard.press('Escape');await expect(page.locator('.drag-ghost')).toHaveCount(0);
+    await hand.first().focus();await page.keyboard.press('Enter');await expect(hand.first()).toHaveAttribute('aria-pressed','true');await page.keyboard.press('Escape');await page.mouse.up();
+    await expect(hand.first()).toHaveAttribute('aria-pressed','false');await expect(page.locator('.is-selected,.drop-hover')).toHaveCount(0);await expect(hand).toHaveCount(5);await expect(page.locator('.energy-box strong')).toHaveText('3/ 3');
+    expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+    await hand.first().click();await expect(hand.first()).toHaveAttribute('aria-pressed','true');await page.keyboard.press('Escape');
+    await hand.first().focus();await page.keyboard.press('Enter');await expect(hand.first()).toHaveAttribute('aria-pressed','true');await page.keyboard.press('Escape');
+  }
+  await dragCard(page,hand.first(),page.locator('.own-formation [data-slot="2"]'));await expect(hand).toHaveCount(4);await expect(page.locator('.energy-box strong')).toHaveText('2/ 3');
+});
+
 test('drag deploys into a chosen lane, cancels safely, repositions units and supports keyboard selection',async({page})=>{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));await dragDeck(page);
   const hand=page.locator('.hand-cards [data-hand]'),own=page.locator('.own-formation');
