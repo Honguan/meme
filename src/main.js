@@ -238,7 +238,7 @@ function collectionHTML() {
 function deckSidebar() {
   const count = new Map(); profile.deck.forEach(id=>count.set(id,(count.get(id)||0)+1));
   const savedControls = `<div class="saved-decks"><label for="saved-deck">已保存卡組</label><div class="saved-deck-row deck-select-row"><select id="saved-deck"><option value="">選擇卡組</option>${profile.decks.map(saved=>`<option data-original value="${esc(saved.id)}" ${saved.id===savedDeckId?'selected':''}>${esc(saved.name)}</option>`).join('')}</select><button class="icon-button" data-action="rename-deck" title="重新命名卡組" aria-label="重新命名卡組" ${savedDeckId?'':'disabled'}>${icon('pencil')}</button><button class="icon-button" data-action="delete-deck" title="刪除已保存卡組" aria-label="刪除已保存卡組" ${savedDeckId?'':'disabled'}>${icon('trash-2')}</button></div><label for="deck-name">卡組名稱</label><div class="saved-deck-row"><input id="deck-name" value="${esc(deckName)}" maxlength="48" autocomplete="off"><button class="icon-button" data-action="save-deck" title="保存卡組" aria-label="保存卡組">${icon('save')}</button></div></div>`;
-  return `<aside class="deck-sidebar"><div class="aside-title"><h2>我的卡組</h2><b class="deck-count ${profile.deck.length<10?'warning':''}">${profile.deck.length}<small>/30</small></b></div>${savedControls}<div class="deck-list">${[...count].map(([id,n])=>{const c=catalog.find(c=>c.id===id);return c?`<div class="deck-row">${image(c)}<span><b>${esc(c.name)}</b><small>${TYPES[c.type]} · ${c.cost} 能量</small></span><b>×${n}</b><button class="icon-button small" data-remove="${esc(id)}" title="移除一張" aria-label="移除 ${esc(c.name)}">${icon('minus')}</button></div>`:'';}).join('')||'<p class="empty-state">尚未加入卡牌</p>'}</div><button class="primary-button" data-action="new">${icon('swords')} 使用卡組對決</button><div class="deck-tools"><button class="quiet-button" data-action="export">${icon('download')} 匯出</button><button class="quiet-button" data-action="import">${icon('upload')} 匯入</button></div></aside>`;
+  return `<aside class="deck-sidebar"><div class="aside-title"><h2>我的卡組</h2><b class="deck-count ${profile.deck.length<10?'warning':''}">${profile.deck.length}<small>/30</small></b></div>${savedControls}<div class="deck-list">${[...count].map(([id,n])=>{const c=catalog.find(c=>c.id===id);return c?`<div class="deck-row">${image(c)}<button class="deck-card" data-deck-card="${esc(id)}" title="卡牌詳情"><b data-original>${esc(c.name)}</b><small>${TYPES[c.type]} · ${c.cost} 能量</small></button><b>×${n}</b><button class="icon-button small" data-remove="${esc(id)}" title="移除一張" aria-label="移除 ${esc(c.name)}">${icon('minus')}</button></div>`:'';}).join('')||'<p class="empty-state">尚未加入卡牌</p>'}</div><button class="primary-button" data-action="new">${icon('swords')} 使用卡組對決</button><div class="deck-tools"><button class="quiet-button" data-action="export">${icon('download')} 匯出</button><button class="quiet-button" data-action="import">${icon('upload')} 匯入</button></div></aside>`;
 }
 function effectRow(value = { trigger: 'play', action: 'shield', target: 'self', amount: 3 }) {
   return `<div class="effect-row"><label>時機<select name="trigger">${Object.entries(TRIGGERS).map(([key,name])=>`<option value="${key}" ${key===value.trigger?'selected':''}>${name}</option>`).join('')}</select></label><label>效果<select name="action">${Object.entries(ACTIONS).map(([key,name])=>`<option value="${key}" ${key===value.action?'selected':''}>${name}</option>`).join('')}</select></label><label>對象<select name="target">${Object.entries(TARGETS).map(([key,name])=>`<option value="${key}" ${key===value.target?'selected':''}>${name}</option>`).join('')}</select></label><label>數值<input name="amount" type="number" min="1" max="99" value="${esc(value.amount)}" required></label><div class="effect-tools"><button class="icon-button" type="button" data-action="effect-up" aria-label="上移效果" title="上移效果">${icon('arrow-up')}</button><button class="icon-button" type="button" data-action="effect-down" aria-label="下移效果" title="下移效果">${icon('arrow-down')}</button><button class="icon-button" type="button" data-action="remove-effect" aria-label="移除此效果" title="移除此效果">${icon('x')}</button></div></div>`;
@@ -463,11 +463,11 @@ modal.addEventListener('close',()=>{
   if(!origin||origin.screen!==screen||app.contains(document.activeElement))return;
   const opener=origin.element;let target=opener.isConnected?opener:null;
   if(!target){
-    const key=['card','action','nav','hand'].find(key=>opener.hasAttribute(`data-${key}`));
+    const key=['card','deck-card','action','nav','hand'].find(key=>opener.hasAttribute(`data-${key}`));
     if(opener.id)target=app.querySelector(`#${CSS.escape(opener.id)}`);
-    else if(key)target=app.querySelector(`[data-${key}="${CSS.escape(opener.dataset[key])}"]`);
+    else if(key)target=app.querySelector(`[data-${key}="${CSS.escape(opener.getAttribute(`data-${key}`))}"]`);
   }
-  if(!target||target.disabled)target=opener.hasAttribute('data-card')?$('#favorites-only'):opener.closest('.saved-decks')?$('#saved-deck'):null;
+  if(!target||target.disabled)target=opener.hasAttribute('data-card')?$('#favorites-only'):opener.hasAttribute('data-deck-card')?$('#deck-name'):opener.closest('.saved-decks')?$('#saved-deck'):null;
   target?.focus();
 });
 
@@ -552,6 +552,7 @@ document.addEventListener('click', e => {
     localize(modal);drawIcons();$('[data-focus-card]',modal).focus();return;
   }
   if (button.dataset.card) return showCard(button.dataset.card);
+  if (button.dataset.deckCard) {button.focus();showCard(button.dataset.deckCard);return;}
   if (button.dataset.play!==undefined) {
     playFromHand(Number(button.dataset.play),$('#play-target')?.value);return;
   }

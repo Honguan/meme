@@ -4,6 +4,33 @@ import { CATALOG } from '../src/catalog.js';
 import { DRAFT_KEY } from '../src/draft.js';
 import { createGame } from '../src/game.js';
 
+test('deck sidebar opens full card details without losing drafts and restores focus after edits to the deck',async({page},testInfo)=>{
+  const profile=freshProfile(),card={id:'custom-deck-inspect',name:`生命值 ${'A'.repeat(68)}`,type:'monster',tag:'glitch',cost:0,attack:2,hp:20,speed:5,image:'',flavor:'側欄測試',effects:[{trigger:'play',action:'shield',target:'self',amount:3}],origin:'自訂'},field={...card,id:'custom-deck-field',name:'匯入 護盾',type:'field',field:'xp'};
+  profile.custom=[card,field];profile.deck[0]=card.id;profile.deck[1]=field.id;profile.favorites=[card.id];profile.decks=[{id:'inspect-saved',name:'原卡組',deck:[...profile.deck]}];
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));await page.addInitScript(profile=>localStorage.setItem('meme-clash-v1',JSON.stringify(profile)),profile);await page.goto('/');
+  const raw=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));await page.locator('[data-nav="workshop"]').click();await page.locator('#card-form [name="name"]').fill('尚未完成的創作');await page.locator('#card-form [name="hp"]').fill('');await page.locator('#card-form [name="amount"]').fill('');
+  const draft=await page.evaluate(()=>sessionStorage.getItem('meme-clash-card-draft-v1'));
+  for(const [locale,title]of [['en','Card details'],['ja','カード詳細'],['es','Detalles de la carta'],['zh-Hant','卡牌詳情']]){
+    await page.locator('[data-action="appearance"]').click();await page.locator('#interface-language').selectOption(locale);await page.keyboard.press('Escape');
+    for(const [screen,width]of [['collection',1440],['workshop',390],['workshop',320]]){
+      await page.setViewportSize({width,height:900});await page.locator(`[data-nav="${screen}"]`).click();
+      for(const c of [card,field]){
+        const row=page.locator(`[data-deck-card="${c.id}"]`);await expect(row).toHaveAttribute('title',title);await expect(row).toHaveAccessibleName(new RegExp(`^${c.name}`));
+        expect(await row.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBeTruthy();await row.focus();await page.keyboard.press('Enter');await expect(page.locator('#modal h2')).toHaveText(c.name);await expect(page.locator('[data-edit]')).toBeVisible();await expect(page.locator('[data-export-card]')).toBeVisible();
+        if(c===card&&locale==='en'&&width===1440){await page.locator('[data-preview]').click();const canvas=page.locator('#modal-preview-stage canvas');await expect(canvas).toBeVisible();await expect.poll(()=>canvas.evaluate(c=>{const pixels=c.getContext('2d').getImageData(0,0,c.width,c.height).data;return pixels.some((v,i)=>i%4===3&&v>0);})).toBeTruthy();}
+        await page.keyboard.press('Escape');await expect(row).toBeFocused();
+      }
+      expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(raw);expect(await page.evaluate(()=>sessionStorage.getItem('meme-clash-card-draft-v1'))).toBe(draft);
+      if(screen==='workshop'){await expect(page.locator('#card-form [name="name"]')).toHaveValue('尚未完成的創作');await expect(page.locator('#card-form [name="hp"]')).toHaveValue('');}
+    }
+  }
+  await page.screenshot({path:`.artifacts/deck-inspect-${testInfo.project.name}-mobile.png`});
+  const row=page.locator(`[data-deck-card="${card.id}"]`);await row.focus();await page.keyboard.press('Enter');await page.locator('[data-add]').click();await expect(row).toBeFocused();
+  const added=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));expect(added.deck.filter(id=>id===card.id)).toHaveLength(2);expect(added.decks).toEqual(profile.decks);expect(added.stats).toEqual(profile.stats);
+  await row.focus();await page.keyboard.press('Enter');await page.locator('[data-delete]').click();await page.locator('#confirm-delete').click();await expect(page.locator('#deck-name')).toBeFocused();await expect(row).toHaveCount(0);
+  const deleted=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));expect(deleted.custom.map(c=>c.id)).toEqual([field.id]);expect(deleted.deck).not.toContain(card.id);expect(deleted.decks[0].deck).not.toContain(card.id);expect(deleted.favorites).toEqual([]);expect(await page.evaluate(()=>sessionStorage.getItem('meme-clash-card-draft-v1'))).toBe(draft);expect(errors).toEqual([]);
+});
+
 test('card pack downloads and imports add copies without changing decks, favorites, stats or editing drafts',async({page},testInfo)=>{
   const card={id:'custom-pack-source',name:'交換迷因',type:'monster',tag:'brain',cost:1,attack:2,hp:20,speed:5,image:'',flavor:'原始創作',effects:[{trigger:'play',action:'shield',target:'self',amount:2},{trigger:'hit',action:'damage',target:'enemy',amount:3},{trigger:'round',action:'energy',target:'enemy',amount:1},{trigger:'death',action:'heal',target:'allies',amount:4}]};
   const profile=parseProfile({...freshProfile(),custom:[card,{...card,id:'custom-pack-field',name:'分享場地',type:'field',field:'xp',effects:[{trigger:'play',action:'draw',target:'self',amount:1}]}]});
