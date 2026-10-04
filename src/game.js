@@ -233,9 +233,9 @@ export function finishRound(g) {
     draw(g, side, 1 + Number(active.includes('brain')) + Number(full.includes('brain')));
   }
   for (let side = 0; side < 2; side++) {
-    const active = combos(g, side), full = combos(g, side, 3);
     for (const u of units(g, side)) {
       if (u.hp <= 0 || u.dead) continue;
+      const active = combos(g, side), full = combos(g, side, 3);
       u.hitUsed = false;
       if (active.includes('wholesome')) u.hp = Math.min(u.maxHp, u.hp + 2 + (full.includes('wholesome') ? 3 : 0));
       if (active.includes('glitch')) u.shield = Math.min(999, u.shield + 2 + (full.includes('glitch') ? 3 : 0));

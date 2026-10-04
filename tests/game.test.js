@@ -94,6 +94,24 @@ test('a fallen source never redirects self effects to a surviving ally',()=>{
   assert.equal(g.players[1].ko,1);
 });
 
+test('round casualties immediately lower later healing and shield set bonuses without removing earlier gains',()=>{
+  for(const side of [0,1])for(const tag of ['wholesome','glitch'])for(const count of [2,3])for(const fallenIndex of [0,1])for(const field of ['grid','xp','backrooms']) {
+    const g=setup();g.field=field;
+    const base={...card('doge'),tag,hp:100,effects:[]};
+    const friends=Array.from({length:count},(_,i)=>summon(g,{...base,effects:i===fallenIndex?[{trigger:'round',action:'damage',amount:99,target:'self'}]:[]},side));
+    friends.forEach((u,i)=>u.hp=i===fallenIndex?1:50);
+    summon(g,{...base,tag:'chaos'},1-side);
+    finishRound(g);
+    assert.equal(friends[fallenIndex].dead,true);assert.equal(combos(g,side,3).length,0);
+    friends.forEach((u,i)=>{
+      if(i===fallenIndex)return;
+      const alive=count-Number(i>fallenIndex),bonus=alive>=3?5:alive>=2?2:0;
+      assert.equal(u.hp,50+(tag==='wholesome'?bonus:0)+(field==='xp'?2:0));
+      assert.equal(u.shield,(tag==='glitch'?bonus:0)+(field==='backrooms'?1:0));
+    });
+  }
+});
+
 test('round casualties cannot be revived by fields or trigger their own round effects',()=>{
   for(const field of ['grid','xp']) {
     const g=setup();g.field=field;
