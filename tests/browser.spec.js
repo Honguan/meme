@@ -1107,11 +1107,11 @@ test('real desktop match animates and finishes a round without console errors',a
   await page.screenshot({path:'.artifacts/desktop.png',fullPage:true});
   await page.getByRole('button',{name:'開始碰撞'}).click();
   await expect(page.locator('#phase-chip')).toHaveText('碰撞對決中');
-  const before=await page.locator('canvas').screenshot();
+  const before=await page.locator('canvas').evaluate(canvas=>canvas.toDataURL());
+  await expect.poll(()=>page.locator('canvas').evaluate(canvas=>canvas.toDataURL())).not.toBe(before);
   await expect(page.locator('#collision-count')).not.toHaveText('0 次碰撞',{timeout:12000});
   await expect(page.locator('canvas')).toHaveAttribute('aria-label',/迷因對決：/);
-  await page.locator('canvas').screenshot({path:'.artifacts/impact.png'});
-  const after=await page.locator('canvas').screenshot();expect(before.equals(after)).toBeFalsy();
+  await page.screenshot({path:'.artifacts/impact.png'});
   await expect(page.locator('#round-number')).toHaveText('02',{timeout:15000});
   expect(errors).toEqual([]);
 });
