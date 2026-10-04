@@ -3,6 +3,29 @@ import { DEFAULT_DECK } from '../src/catalog.js';
 import { loadout, makeRoom, command, view } from '../server/matches.js';
 import { parseProfile } from '../src/storage.js';
 
+for(const mode of ['local','online'])test(`${mode} inspector cancellation restores piece focus and closing details preserves selection`,async({page})=>{
+  const requests=[],errors=[];page.on('pageerror',error=>errors.push(error.message));
+  if(mode==='online'){
+    const room=makeRoom(loadout({deck:DEFAULT_DECK,custom:[],field:'grid'}),loadout({deck:DEFAULT_DECK,custom:[],field:'grid'}),1000),snapshot=view(room,0,1,'selection-test',1001,1001);
+    await page.route('**/api/match/**',route=>{requests.push(new URL(route.request().url()).pathname.split('/').at(-1));return route.fulfill({json:snapshot});});
+    // Keep polling redraws outside this local selection/focus contract.
+    await page.addInitScript(()=>{const timer=window.setTimeout;window.setTimeout=(fn,delay,...args)=>timer(fn,delay===1500?60000:delay,...args);});
+  }
+  await prepare(page);if(mode==='online'){await join(page);await expect(page.locator('#online-status')).toContainText('輪到你部署');}
+  const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1')),before=await page.locator('.duel-table').textContent();
+  for(const width of [1440,390])for(const selector of ['[data-hand="1"]','.own-formation [data-unit]']){
+    await page.setViewportSize({width,height:900});const piece=page.locator(selector).first(),inspect=page.locator('#card-inspector [data-action="inspect"]'),cancel=page.locator('[data-action="cancel-selection"]');
+    await piece.focus();await page.keyboard.press('Enter');await expect(piece).toHaveAttribute('aria-pressed','true');const name=await page.locator('#card-inspector h2').textContent();
+    await inspect.focus();await page.keyboard.press('Enter');await expect(page.locator('#modal')).toBeVisible();await page.keyboard.press('Escape');await expect(page.locator('#modal')).not.toBeVisible();
+    await expect(piece).toHaveAttribute('aria-pressed','true');await expect(page.locator('#card-inspector h2')).toHaveText(name);await expect(inspect).toBeFocused();
+    await cancel.focus();await page.keyboard.press('Enter');await expect(piece).toBeFocused();await expect(piece).toHaveAttribute('aria-pressed','false');await expect(cancel).toHaveCount(0);await expect(page.locator('.drop-valid')).toHaveCount(0);
+    await page.keyboard.press('Enter');await inspect.focus();await page.keyboard.press('Escape');await expect(piece).toBeFocused();await expect(piece).toHaveAttribute('aria-pressed','false');
+    await page.keyboard.press('Enter');await piece.focus();await page.keyboard.press('Escape');await expect(piece).toBeFocused();await expect(piece).toHaveAttribute('aria-pressed','false');
+    await page.keyboard.press('Enter');const pile=page.locator('.duel-actions [data-action="discard"]');await pile.focus();await page.keyboard.press('Escape');await expect(pile).toBeFocused();await expect(piece).toHaveAttribute('aria-pressed','false');
+  }
+  expect(await page.locator('.duel-table').textContent()).toBe(before);expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);expect(requests.filter(action=>action!=='state'&&action!=='join')).toEqual([]);expect(errors).toEqual([]);
+});
+
 for(const side of [0,1])test(`online graveyard side ${side} reads public snapshots without exposing hidden cards or sending commands`,async({page})=>{
   const custom=label=>Array.from({length:9},(_,i)=>({id:`custom-discard-online-${i}`,name:`${label} ${i}`,type:i===7?'spell':i===8?'trap':'monster',tag:'bonk',cost:0,attack:1,hp:20,speed:5,image:'',flavor:'',effects:i>=7?[{trigger:i===7?'play':'hit',action:'shield',target:'self',amount:1}]:[]}));
   const first=custom('自己原卡'),second=custom('對手原卡'),deck=[...first.map(c=>c.id),first[7].id],room=makeRoom(loadout({deck,custom:first,field:'grid'}),loadout({deck,custom:second,field:'grid'}),1000);

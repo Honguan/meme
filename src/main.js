@@ -449,7 +449,7 @@ document.addEventListener('pointerover',e=>{if(e.pointerType!=='touch')queueHove
 document.addEventListener('pointerout',e=>{if(hoverCard&&hoverCard.contains(e.target)&&!hoverCard.contains(e.relatedTarget))hideHoverPreview();});
 document.addEventListener('focusin',e=>queueHoverPreview(e.target.closest('.meme-card')));
 document.addEventListener('focusout',e=>{if(hoverCard?.contains(e.target))hideHoverPreview();});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){hideHoverPreview();selected=null;paintSelection();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){hideHoverPreview();if(!modal.open)clearSelection();}});
 window.addEventListener('scroll',()=>{
   const target=hoverCard;hideHoverPreview();
   if(target?.isConnected&&target.matches(':hover,:focus'))queueHoverPreview(target);
@@ -491,6 +491,11 @@ function paintSelection() {
     button.classList.toggle('is-selected',!!on);button.setAttribute('aria-pressed',String(!!on));
   }
   for(const zone of app.querySelectorAll('[data-drop]'))zone.classList.toggle('drop-valid',!!selected&&!selectionIntent(zone).error);
+}
+function clearSelection() {
+  const origin=selected&&$('#card-inspector')?.contains(document.activeElement)?selected.uid?$(`[data-unit="${selected.uid}"]`):$(`[data-hand="${selected.index}"]`):null;
+  selected=null;paintSelection();
+  origin?.focus();
 }
 function playFromHand(index,targetId,slot) {
   if(online){if(canPlay()){modal.close();void onlineCommand('play',{index,targetId:targetId||undefined,slot});return true;}return false;}
@@ -604,7 +609,7 @@ document.addEventListener('click', e => {
       openDialog(`<div class="dialog-heading"><h2>離開對局？</h2><p>離開會判負。</p></div><button class="quiet-button" data-action="close">取消</button><button class="primary-button" data-action="finish-online">確認離開</button>`,'small-modal');break;
     case 'finish-online': modal.close();replaying=false;void onlineCommand('leave');break;
     case 'inspect': {const c=selectedCard();if(c)showCard(c.id,selected?.uid?null:selected?.index??0);break;}
-    case 'cancel-selection': selected=null;paintSelection();break;
+    case 'cancel-selection': clearSelection();break;
     case 'appearance': appearanceDialog();break;
     case 'random-deck': {
       const next=randomWorldDeck(catalog);
