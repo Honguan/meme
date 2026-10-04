@@ -43,6 +43,7 @@ const hoverPreview = document.createElement('aside');
 hoverPreview.className = 'hover-preview'; hoverPreview.hidden = true; hoverPreview.id = 'card-effect-preview';
 hoverPreview.setAttribute('role','tooltip'); document.body.append(hoverPreview);
 let sourceLanguage = 'all', sourceCountry = 'all', ability = 'all', sortOrder = 'catalog', favoritesOnly = false;
+let refreshingCatalog = false;
 const languageNames = { ara:'العربية', ben:'বাংলা', deu:'Deutsch', eng:'English', fra:'Français', hin:'हिन्दी', jpn:'日本語', kor:'한국어', por:'Português', rus:'Русский', spa:'Español', tam:'தமிழ்', urd:'اردو', vie:'Tiếng Việt', zho:'中文' };
 let regionNames = new Intl.DisplayNames([getLocale()], { type: 'region' });
 const app = $('#app'), modal = $('#modal');
@@ -217,7 +218,7 @@ function collectionHTML() {
   if(sortOrder==='name'){const compare=new Intl.Collator(getLocale(),{numeric:true}).compare;filtered.sort((a,b)=>compare(a.name,b.name));}
   else if(sortOrder==='cost')filtered.sort((a,b)=>a.cost-b.cost);
   else if(sortOrder==='attack'||sortOrder==='hp')filtered.sort((a,b)=>b[sortOrder]-a[sortOrder]);
-  return `<main class="collection-page"><div class="page-heading"><h1>卡牌圖鑑</h1><button class="quiet-button" data-action="refresh">${icon('refresh-cw')} 更新網路卡庫</button></div>
+  return `<main class="collection-page"><div class="page-heading"><h1>卡牌圖鑑</h1><button class="quiet-button" data-action="refresh" aria-busy="${refreshingCatalog}" ${refreshingCatalog?'disabled':''}>${icon('refresh-cw')} 更新網路卡庫</button></div>
     <div class="collection-toolbar"><label class="search-box">${icon('search')}<input id="search" type="search" placeholder="搜尋迷因、陣營或效果" aria-label="搜尋卡牌" value="${esc(query)}"></label><div class="filter-tabs" role="group" aria-label="卡牌類型">${[['all','全部'],...Object.entries(TYPES)].map(([id,label])=>`<button data-filter="${id}" class="${filter===id?'active':''}" aria-pressed="${filter===id}">${label}</button>`).join('')}</div><select id="origin-filter" aria-label="卡牌來源">${['all','精選','網路','全球','自訂'].map(o=>`<option value="${o}" ${origin===o?'selected':''}>${o==='all'?'所有來源':o}</option>`).join('')}</select></div>
     <div class="world-filters"><span>${WORLD_COVERAGE.count.toLocaleString()} 全球模板 · ${Object.keys(WORLD_COVERAGE.languages).length} 種來源語言 · ${Object.keys(WORLD_COVERAGE.countries).length} 個來源地區</span><label>來源語言<select id="language-filter"><option value="all">所有語言</option>${Object.keys(WORLD_COVERAGE.languages).map(code=>`<option value="${code}" ${sourceLanguage===code?'selected':''}>${languageNames[code] || code}</option>`).join('')}<option value="unknown" ${sourceLanguage==='unknown'?'selected':''}>未標註</option></select></label><label>來源地區<select id="country-filter"><option value="all">所有地區</option>${Object.keys(WORLD_COVERAGE.countries).map(code=>`<option value="${code}" ${sourceCountry===code?'selected':''}>${regionNames.of(code)}</option>`).join('')}</select></label><label>梗意能力<select id="ability-filter"><option value="all">所有能力</option>${Object.entries(ARCHETYPES).map(([id,a])=>`<option value="${id}" ${ability===id?'selected':''}>${a.name}</option>`).join('')}</select></label></div>
     <div class="collection-layout"><section><div class="results-heading"><span>${filtered.length} 張卡牌</span><label class="favorites-filter"><input id="favorites-only" type="checkbox" ${favoritesOnly?'checked':''}>只看收藏</label><select id="sort-order" aria-label="卡牌排序">${[['catalog','原始順序'],['name','名稱順序'],['cost','能量低至高'],['attack','攻擊力高至低'],['hp','生命值高至低']].map(([id,label])=>`<option value="${id}" ${sortOrder===id?'selected':''}>${label}</option>`).join('')}</select></div><div class="catalog-grid">${filtered.slice(0,visible).map(c=>cardHTML(c)).join('') || '<div class="empty-state">沒有符合條件的卡牌。</div>'}</div>${filtered.length>visible?`<button class="quiet-button load-more" data-action="more">載入更多 ${icon('plus')}</button>`:''}</section>${deckSidebar()}</div></main>`;
@@ -344,7 +345,8 @@ function syncTriggers() {
   }
 }
 async function refreshCatalog(button) {
-  button.disabled = true;
+  if (refreshingCatalog) return;
+  refreshingCatalog = true; button.disabled = true; button.setAttribute('aria-busy','true');
   try {
     const response = await fetch('https://api.imgflip.com/get_memes', { signal: AbortSignal.timeout(12000) });
     if (!response.ok) throw new Error('網路卡庫暫時無法連線');
@@ -361,7 +363,11 @@ async function refreshCatalog(button) {
     const web = [...required, ...recent.slice(Math.max(0,recent.length+required.length-1000))];
     if (!persist({ ...profile, web })) return;
     render(); toast(`已更新 ${accepted.length} 個模板，新增 ${catalog.length-before} 張卡牌`);
-  } catch(e) { toast(`${e.message}，保留既有卡庫`); } finally { button.disabled = false; }
+  } catch(e) { toast(`${e.message}，保留既有卡庫`); } finally {
+    refreshingCatalog = false;
+    const current = app.querySelector('[data-action="refresh"]') || button;
+    current.disabled = false; current.setAttribute('aria-busy','false');
+  }
 }
 function exportProfile(raw = JSON.stringify(profile,null,2), filename = 'meme-clash-deck.json') {
   const url = URL.createObjectURL(new Blob([raw], {type:'application/json'}));

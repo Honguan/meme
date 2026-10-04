@@ -720,6 +720,40 @@ test('favorites reject quota and stale-tab writes without optimistic state chang
   await toggle.click();await expect(page.locator('#toast')).toContainText('其他分頁更新');await expect(toggle).toHaveAttribute('aria-pressed','true');expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(external);
 });
 
+test('catalog refresh remains single-flight across redraws and navigation',async({page})=>{
+  let release,requests=0;const pending=new Promise(resolve=>release=resolve);
+  await page.route('https://api.imgflip.com/get_memes',async route=>{const request=++requests;await pending;await route.fulfill({json:{success:true,data:{memes:[{id:'single-flight',name:`Single flight ${request}`,url:'https://i.imgflip.com/single-flight.jpg'}]}}});});
+  try{
+    await page.goto('/');await page.locator('[data-nav="collection"]').click();const refresh=page.locator('[data-action="refresh"]'),requested=page.waitForRequest('https://api.imgflip.com/get_memes');
+    await refresh.click();await requested;await page.locator('#search').fill('Single flight');
+    await refresh.evaluate(button=>button.click());
+    await page.locator('[data-nav="workshop"]').click();await page.locator('[data-nav="collection"]').click();
+    expect(requests).toBe(1);await expect(refresh).toBeDisabled();await expect(refresh).toHaveAttribute('aria-busy','true');
+    await page.locator('#sort-order').selectOption('name');await expect(refresh).toBeDisabled();await expect(refresh).toHaveAttribute('aria-busy','true');
+    release();await expect(page.locator('[data-card="web-single-flight"]')).toBeVisible();await expect(refresh).toBeEnabled();await expect(refresh).toHaveAttribute('aria-busy','false');
+    const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));expect(saved.web.find(m=>m.id==='single-flight').name).toBe('Single flight 1');expect(()=>parseProfile(saved)).not.toThrow();
+    await refresh.click();await expect(page.locator('[data-card="web-single-flight"]')).toContainText('Single flight 2');expect(requests).toBe(2);
+  }finally{release();}
+});
+
+test('catalog refresh failures release busy state off-page and allow retry without save loss',async({page})=>{
+  let release,pending=Promise.resolve(),failure='';const profile=freshProfile();
+  await page.addInitScript(profile=>{if(!localStorage.getItem('meme-clash-v1'))localStorage.setItem('meme-clash-v1',JSON.stringify(profile));},profile);
+  await page.route('https://api.imgflip.com/get_memes',async route=>{await pending;if(failure==='http')await route.fulfill({status:503,body:'unavailable'});else await route.fulfill({json:{success:true,data:{memes:[{id:'retry-refresh',name:'Retry refresh',url:'https://i.imgflip.com/retry-refresh.jpg'}]}}});});
+  await page.goto('/');
+  for(const mode of ['http','quota']){
+    failure=mode;pending=new Promise(resolve=>release=resolve);await page.locator('[data-nav="collection"]').click();const saved=await page.evaluate(()=>localStorage.getItem('meme-clash-v1'));
+    if(mode==='quota')await page.evaluate(()=>{window.refreshFails=true;const set=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(k==='meme-clash-v1'&&window.refreshFails)throw new Error('quota');return set.call(this,k,v);};});
+    try{
+      const requested=page.waitForRequest('https://api.imgflip.com/get_memes');await page.locator('[data-action="refresh"]').click();await requested;await page.locator('[data-nav="workshop"]').click();release();
+      await expect(page.locator('#toast')).toContainText(mode==='http'?'保留既有卡庫':'儲存空間不足');expect(await page.evaluate(()=>localStorage.getItem('meme-clash-v1'))).toBe(saved);
+      await page.evaluate(()=>window.refreshFails=false);await page.locator('[data-nav="collection"]').click();await expect(page.locator('[data-action="refresh"]')).toBeEnabled();await expect(page.locator('[data-action="refresh"]')).toHaveAttribute('aria-busy','false');
+      failure='';pending=Promise.resolve();await page.locator('[data-action="refresh"]').click();await expect(page.locator('#toast')).toContainText('已更新 1 個模板');await expect(page.locator('[data-action="refresh"]')).toBeEnabled();
+      const result=await page.evaluate(()=>JSON.parse(localStorage.getItem('meme-clash-v1')));expect(result.deck).toEqual(profile.deck);expect(result.decks).toEqual(profile.decks);expect(result.favorites).toEqual(profile.favorites);expect(result.web).toEqual([{id:'retry-refresh',name:'Retry refresh',url:'https://i.imgflip.com/retry-refresh.jpg'}]);
+    }finally{release();}
+  }
+});
+
 test('fully favorited web caches retain overrides without exceeding the template limit',async({page})=>{
   const profile=freshProfile(),[cached,uncached]=CATALOG.filter(c=>c.origin==='網路');
   profile.web=[...Array.from({length:999},(_,i)=>({id:`favorite-${i}`,name:`Favorite ${i}`,url:'https://i.imgflip.com/favorite.jpg'})),{id:cached.id.slice(4),name:'Cached override',url:'https://i.imgflip.com/cached.jpg'}];
